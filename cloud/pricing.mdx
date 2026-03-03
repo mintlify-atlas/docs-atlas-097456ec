@@ -1,0 +1,518 @@
+---
+title: CockroachDB Cloud Pricing
+description: Understand how CockroachDB Cloud pricing works across Basic, Standard, and Advanced plans.
+---
+
+CockroachDB Cloud pricing varies by plan and includes charges for compute, storage, data transfer, backups, and change data capture. This page explains how costs are calculated for each plan.
+
+## Pricing Overview
+
+Monthly charges depend on your cluster plan:
+
+- **Basic**: Usage-based pricing (Request Units + Storage)
+- **Standard**: Provisioned compute + usage-based storage and services
+- **Advanced**: Fully provisioned infrastructure + usage-based services
+
+For current rates, visit [CockroachDB Pricing](https://www.cockroachlabs.com/pricing).
+
+## Pricing by Plan
+
+<Tabs>
+  <Tab title="Basic">
+    **CockroachDB Basic** uses fully usage-based pricing.
+    
+    ### Cost Components
+    
+    **Request Units (RUs):**
+    - Measures compute, network, and I/O consumption
+    - 1 RU = 3ms SQL CPU, or 1 KiB network egress, or varying storage I/O
+    - Billed per RU consumed
+    - Rates vary by cloud provider and region
+    
+    **Storage:**
+    - Billed per GiB-hour
+    - Includes 3x replication at no extra cost
+    - Rates vary by cloud provider and region
+    
+    ### Free Tier
+    
+    For monthly-billed customers:
+    - First $15/month is free
+    - Equivalent to ~50M Request Units + 10 GiB storage
+    - Does not apply to annual contracts
+    
+    ### Example Cost Calculation
+    
+    **Scenario**: Small application, 100M RU/month, 25 GiB storage
+    
+    ```
+    Request Units: 100M RU × $0.001/1M RU = $100
+    Storage: 25 GiB × 730 hours × $0.00014/GiB-hour = $2.56
+    Free credit: -$15
+    Total: $87.56/month
+    ```
+    
+    <Info>
+    Actual prices vary by cloud provider and region. See [pricing page](https://www.cockroachlabs.com/pricing) for current rates.
+    </Info>
+  </Tab>
+  
+  <Tab title="Standard">
+    **CockroachDB Standard** has provisioned compute with usage-based storage.
+    
+    ### Cost Components
+    
+    **Compute (Provisioned):**
+    - Billed per vCPU-hour
+    - Set your provisioned capacity (minimum 4 vCPUs)
+    - Rates vary by cloud provider and region
+    - Multi-region clusters use highest region rate
+    
+    **Storage (Usage-based):**
+    - Billed per GiB-hour
+    - Automatically scales with data
+    - First 3 replicas included
+    - Rates vary by cloud provider and region
+    
+    **Data Transfer (Usage-based):**
+    - Same-region: Charged for egress to endpoints
+    - Cross-region: Charged at CSP list price
+    - Public internet: Charged for all egress
+    
+    **Backups (Usage-based):**
+    - Managed backups: Tiered per-GiB rates
+    - Self-managed backups: Per-GiB transfer fee
+    - Rates vary by frequency and region
+    
+    **Change Data Capture (Usage-based):**
+    - Billed per GiB-month of watched data
+    - Tiered pricing
+    
+    ### Example Cost Calculation
+    
+    **Scenario**: Production cluster, 32 vCPUs, 500 GiB storage, Iowa region
+    
+    ```
+    Compute: 32 vCPU × 730 hours × $0.100/vCPU-hour = $2,336
+    Storage: 500 GiB × 730 hours × $0.00014/GiB-hour = $51.10
+    Data Transfer: (varies by usage)
+    Backups: (varies by backup size)
+    Total: ~$2,387/month + usage-based costs
+    ```
+  </Tab>
+  
+  <Tab title="Advanced">
+    **CockroachDB Advanced** has fully provisioned infrastructure.
+    
+    ### Cost Components
+    
+    **Compute (Provisioned):**
+    - Billed per node per hour
+    - Based on vCPU count per node
+    - Rates vary by cloud, region, and security add-on
+    
+    **Storage (Provisioned):**
+    - Billed per GiB per node per hour
+    - Set storage per node at creation
+    - AWS includes provisioned IOPS
+    - Rates vary by cloud, region, and security add-on
+    
+    **IOPS (Provisioned - AWS only):**
+    - Automatically provisioned based on storage
+    - Included in storage cost
+    
+    **Data Transfer (Usage-based):**
+    - Same-region, cross-region, and public internet
+    - Charged at CSP list prices
+    - Private endpoint traffic charged separately
+    
+    **Backups (Usage-based):**
+    - Managed backups: Tiered per-GiB rates
+    - Self-managed backups: Per-GiB transfer fee
+    - Rates vary by frequency, region, and security add-on
+    
+    **Change Data Capture (Usage-based):**
+    - Billed per GiB-month of watched data
+    - Tiered pricing
+    - Rates vary by security add-on
+    
+    **Security Add-on (Optional):**
+    - Additional hourly cost per node
+    - Enables CMEK, PCI DSS, HIPAA compliance
+    - Required for advanced compliance
+    
+    ### Example Cost Calculation
+    
+    **Scenario**: 3-node cluster, 8 vCPU/32GB RAM per node, 75 GiB storage per node, Oregon GCP
+    
+    ```
+    Compute: 3 nodes × 730 hours × $1.062/node-hour = $2,326
+    Storage: 3 nodes × 75 GiB × 730 hours × $0.0010338/GiB-hour = $170
+    Total: ~$2,496/month + usage-based costs
+    ```
+  </Tab>
+</Tabs>
+
+## Detailed Pricing Components
+
+### Compute Pricing
+
+<Accordion title="How compute is priced">
+  **Basic:**
+  - Measured in Request Units
+  - 1 RU = 3ms of SQL CPU
+  - Auto-scales with workload
+  
+  **Standard:**
+  - Provisioned capacity in vCPUs
+  - Billed hourly regardless of usage
+  - Rates: $0.08 - $0.15/vCPU-hour depending on region
+  
+  **Advanced:**
+  - Per-node hourly rate
+  - Based on machine type (vCPU + RAM)
+  - Rates: $0.50 - $2.00/node-hour depending on size and region
+</Accordion>
+
+### Storage Pricing
+
+<Accordion title="How storage is priced">
+  **Basic:**
+  - Usage-based per GiB-hour
+  - Rates: ~$0.00014/GiB-hour
+  - 3x replication included
+  
+  **Standard:**
+  - Usage-based per GiB-hour
+  - Auto-scales with data
+  - Rates: ~$0.00014/GiB-hour
+  - 3x replication included
+  
+  **Advanced:**
+  - Provisioned per node
+  - Billed per GiB-hour per node
+  - Rates: ~$0.001/GiB-hour per node
+  - Must be set at creation
+</Accordion>
+
+### Data Transfer Pricing
+
+<Accordion title="How data transfer is priced">
+  **Same-Region:**
+  - Free between cluster nodes
+  - Charged for egress to external endpoints
+  - Rates: CSP same-region egress rates
+  
+  **Cross-Region:**
+  - Charged for all cross-region traffic
+  - Includes inter-node replication
+  - Rates: CSP cross-region transfer rates
+  
+  **Public Internet:**
+  - All data egressing to internet
+  - Includes client connections, exports, changefeeds
+  - Rates: CSP internet egress rates
+</Accordion>
+
+### Backup Pricing
+
+<Accordion title="How backups are priced">
+  **Managed Backups:**
+  - Tiered per-GiB-month rates
+  - Tier 1 (under 5 GiB): Higher rate
+  - Tier 2 (5-100 GiB): Mid rate
+  - Tier 3 (100-500 GiB): Lower rate
+  - Tier 4 (500-1000 GiB): Even lower
+  - Tier 5 (over 1000 GiB): Lowest rate
+  - Daily vs hourly backup rates differ
+  
+  **Self-Managed Backups:**
+  - Per-GiB transfer fee
+  - You pay for your cloud storage separately
+  - Gives you full control
+</Accordion>
+
+### CDC (Changefeeds) Pricing
+
+<Accordion title="How changefeeds are priced">
+  - Charged per GiB-month of watched data
+  - "Watched data" = total size of tables with active changefeeds
+  - Tiered pricing (same tiers as backups)
+  - Basic: Included in Request Units
+  - Standard/Advanced: Separate usage-based charge
+</Accordion>
+
+## Regional Pricing Differences
+
+Prices vary significantly by region:
+
+**Example vCPU-hour rates (Standard):**
+
+| Region | Cloud | Rate/vCPU-hour |
+|--------|-------|----------------|
+| Iowa (us-central1) | GCP | $0.100 |
+| Oregon (us-west1) | GCP | $0.106 |
+| Belgium (europe-west1) | GCP | $0.113 |
+| Singapore (asia-southeast1) | GCP | $0.121 |
+| US East (us-east-1) | AWS | $0.098 |
+| EU West (eu-west-1) | AWS | $0.109 |
+
+<Info>
+For current regional pricing, see the [pricing calculator](https://www.cockroachlabs.com/pricing).
+</Info>
+
+## Cost Optimization Strategies
+
+### Choose the Right Plan
+
+<CardGroup cols={3}>
+  <Card title="Use Basic For">
+    - Development/testing
+    - Proof of concepts
+    - Small applications
+    - Variable workloads
+    - Learning CockroachDB
+  </Card>
+  
+  <Card title="Use Standard For">
+    - Production workloads
+    - Predictable traffic
+    - Cost optimization
+    - Growing applications
+  </Card>
+  
+  <Card title="Use Advanced For">
+    - Mission-critical apps
+    - Compliance requirements
+    - Enterprise features
+    - Dedicated resources
+    - DB Console access
+  </Card>
+</CardGroup>
+
+### Optimize Compute Costs
+
+**Basic:**
+- Optimize queries to reduce RU consumption
+- Use indexes effectively
+- Implement caching where appropriate
+- See [Resource Usage guide](/cloud/resource-usage)
+
+**Standard:**
+- Right-size provisioned capacity
+- Monitor actual vs provisioned usage
+- Scale down during off-peak (where allowed)
+- Use auto-scaling features
+
+**Advanced:**
+- Choose appropriate node sizes
+- Don't over-provision
+- Use multi-region only when needed
+- Consider node count vs node size tradeoffs
+
+### Optimize Storage Costs
+
+- Implement data retention policies
+- Use TTL to expire old data automatically
+- Archive historical data
+- Compress large columns
+- Drop unused indexes
+- Regular vacuum/compaction
+
+### Optimize Data Transfer Costs
+
+- Minimize cross-region queries
+- Use regional tables for multi-region clusters
+- Implement follower reads
+- Optimize changefeed payloads
+- Cache frequently accessed data
+- Use private connectivity to reduce egress
+
+### Optimize Backup Costs
+
+- Set appropriate retention periods
+- Use self-managed backups for long-term retention
+- Consider backup frequency vs RPO requirements
+- Expire old backups
+- Use incremental backups
+
+## Billing and Payment
+
+### Payment Methods
+
+<Tabs>
+  <Tab title="Credit Card">
+    - Charged monthly
+    - Automatic payment
+    - Update anytime in Console
+  </Tab>
+  
+  <Tab title="AWS Marketplace">
+    - Billed through AWS account
+    - Consolidated billing
+    - AWS credits applicable
+  </Tab>
+  
+  <Tab title="GCP Marketplace">
+    - Billed through GCP account
+    - Consolidated billing
+    - GCP credits applicable
+  </Tab>
+  
+  <Tab title="Enterprise Agreement">
+    - Annual contracts
+    - Upfront credits
+    - Custom terms
+    - Contact sales
+  </Tab>
+</Tabs>
+
+### Billing Cycle
+
+- **Billing Period**: Calendar month
+- **Invoice Date**: 1st of following month
+- **Payment Due**: Per payment method
+- **Usage**: Hourly metering, monthly billing
+
+### Credits and Trials
+
+**Free Trial:**
+- $400 in credits
+- Valid for 30 days
+- All features included
+- Standard or Advanced cluster
+
+**Free Monthly Credit (Basic):**
+- $15/month for monthly-billed customers
+- ~50M Request Units + 10 GiB storage
+- Not available for annual contracts
+
+## Pricing Examples
+
+### Example 1: Small Development Cluster (Basic)
+
+**Workload:**
+- 20M Request Units/month
+- 5 GiB storage
+- Single region (GCP Iowa)
+
+**Monthly Cost:**
+```
+Request Units: 20M × $0.001/1M = $20.00
+Storage: 5 GiB × 730 hours × $0.00014/GiB-hour = $0.51
+Free credit: -$15.00
+Total: $5.51/month
+```
+
+### Example 2: Production App (Standard)
+
+**Configuration:**
+- 16 vCPUs provisioned
+- 200 GiB storage (actual usage)
+- Single region (AWS us-east-1)
+- Daily backups, ~50 GiB
+
+**Monthly Cost:**
+```
+Compute: 16 vCPU × 730 hours × $0.098/vCPU-hour = $1,144
+Storage: 200 GiB × 730 hours × $0.00014/GiB-hour = $20.44
+Backups: 50 GiB × ~$0.10/GiB = ~$5
+Data Transfer: (varies)
+Total: ~$1,170/month + transfer costs
+```
+
+### Example 3: Multi-Region Production (Advanced)
+
+**Configuration:**
+- 9 nodes (3 per region)
+- 8 vCPU, 32 GB RAM per node
+- 100 GiB storage per node
+- 3 regions (GCP: Iowa, Belgium, Singapore)
+
+**Monthly Cost:**
+```
+Compute: 9 nodes × 730 hours × $1.062/node-hour = $7,075
+Storage: 9 nodes × 100 GiB × 730 hours × $0.001/GiB-hour = $657
+Backups: ~$50
+Data Transfer: ~$200 (cross-region replication)
+Total: ~$7,982/month
+```
+
+## Cost Estimation Tools
+
+### Pricing Calculator
+
+Use the [CockroachDB Pricing Calculator](https://www.cockroachlabs.com/pricing) to estimate costs:
+
+1. Select plan type
+2. Choose cloud provider and regions
+3. Configure capacity
+4. View estimated monthly cost
+
+### Cloud Console Estimates
+
+The Cloud Console shows real-time cost estimates:
+- During cluster creation
+- When scaling capacity
+- On cluster overview page
+- In billing section
+
+## Monitoring Costs
+
+Track your spending:
+
+### Billing Page
+
+- **Overview**: Current month charges
+- **Invoices**: Historical billing
+- **Usage**: Detailed breakdown
+- **Estimates**: Projected costs
+
+### Cost Alerts
+
+Set up spending alerts:
+
+<Steps>
+  <Step title="Navigate to Billing">
+    Go to **Billing** > **Alerts**
+  </Step>
+  
+  <Step title="Set Threshold">
+    Define monthly spend threshold
+  </Step>
+  
+  <Step title="Add Recipients">
+    Configure email notifications
+  </Step>
+</Steps>
+
+### Usage APIs
+
+Track usage programmatically:
+
+```bash
+# Get cluster usage
+curl -X GET \
+  https://cockroachlabs.cloud/api/v1/clusters/{cluster-id}/usage \
+  -H "Authorization: Bearer {api-key}"
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Plan Comparison" icon="table" href="/cloud/plan-comparison">
+    Compare plans in detail
+  </Card>
+  
+  <Card title="Billing Management" icon="credit-card" href="/cloud/billing-management">
+    Manage billing and payments
+  </Card>
+  
+  <Card title="Cost Calculator" icon="calculator" href="https://www.cockroachlabs.com/pricing">
+    Estimate your costs
+  </Card>
+  
+  <Card title="Resource Usage" icon="chart-bar" href="https://www.cockroachlabs.com/docs/cockroachcloud/resource-usage">
+    Understand resource consumption
+  </Card>
+</CardGroup>

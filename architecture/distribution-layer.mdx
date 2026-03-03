@@ -1,0 +1,176 @@
+---
+title: Distribution layer
+description: The distribution layer provides a unified view of your cluster's data.
+---
+
+The distribution layer of CockroachDB's architecture provides a unified view of your cluster's data.
+
+<Info>
+If you haven't already, we recommend reading the [architecture overview](/architecture/overview).
+</Info>
+
+## Overview
+
+To make all data in your cluster accessible from any node, CockroachDB stores data in a monolithic sorted map of key-value pairs. This key-space describes all of the data in your cluster, as well as its location, and is divided into what we call **ranges**—contiguous chunks of the key-space. Every key can always be found in a single range.
+
+CockroachDB implements a sorted map to enable:
+
+- **Simple lookups**: Because we identify which nodes are responsible for certain portions of the data, queries are able to quickly locate where to find the data they want.
+- **Efficient scans**: By defining the order of data, it's easy to find data within a particular range during a scan.
+
+## Monolithic sorted map structure
+
+The monolithic sorted map is comprised of two fundamental elements:
+
+- **System data**: Meta ranges that describe the locations of data in your cluster (among many other cluster-wide and local data elements)
+- **User data**: Your cluster's table data
+
+### Meta ranges
+
+The locations of all ranges in your cluster are stored in a two-level index at the beginning of your key-space, known as meta ranges, where the first level (`meta1`) addresses the second, and the second (`meta2`) addresses data in the cluster.
+
+This two-level index plus user data can be visualized as a tree, with the root at `meta1`, the second level at `meta2`, and the leaves of the tree made up of the ranges that hold user data.
+
+<Note>
+Every node has information on where to locate the `meta1` range (known as its range descriptor), and the range is never split.
+</Note>
+
+This meta range structure lets CockroachDB address up to 4EiB of user data by default. With larger range sizes, it's possible to expand this capacity even further.
+
+Meta ranges are treated mostly like normal ranges and are accessed and replicated just like other elements of your cluster's KV data.
+
+Each node caches values of the `meta2` range it has accessed before, which optimizes access of that data in the future. Whenever a node discovers that its `meta2` cache is invalid for a specific key, the cache is updated by performing a regular read on the `meta2` range.
+
+### Table data
+
+After the node's meta ranges is the KV data your cluster stores.
+
+Each table and its secondary indexes initially map to a single range, where each key-value pair in the range represents a single row in the table (the primary index) or a single row in a secondary index. As soon as a range reaches the default range size, it splits into two ranges. This process continues as a table and its indexes continue growing.
+
+The default range size represents a sweet spot between a size that's small enough to move quickly between nodes, but large enough to store a meaningfully contiguous set of data whose keys are more likely to be accessed together. These ranges are then shuffled around your cluster to ensure survivability.
+
+These table ranges are replicated (in the replication layer), and have the addresses of each replica stored in the `meta2` range.
+
+## Using the monolithic sorted map
+
+When a node receives a request, it looks up the location of the range(s) that include the keys in the request in a bottom-up fashion. This process works as follows:
+
+<Steps>
+
+<Step title="Check cache for range location">
+
+For each key, the node looks up the location of the range containing the specified key in the second level of range metadata (`meta2`). That information is cached for performance. If the range's location is found in the cache, it is returned immediately.
+
+</Step>
+
+<Step title="Look up meta2 location">
+
+If the range's location is not found in the cache, the node looks up the location of the range where the actual value of `meta2` resides. This information is also cached. If the location of the `meta2` range is found in the cache, the node sends an RPC to the `meta2` range to get the location of the keys.
+
+</Step>
+
+<Step title="Look up meta1 location">
+
+If the location of the `meta2` range is not found in the cache, the node looks up the location of the range where the actual value of the first level of range metadata (`meta1`) resides. This lookup always succeeds because the location of `meta1` is distributed among all the nodes in the cluster using a gossip protocol.
+
+</Step>
+
+</Steps>
+
+<Note>
+The process is recursive. Every time a lookup is performed, it either gets a location from the cache or performs another lookup on the value in the next level up in the tree. Because the range metadata is cached, a lookup can usually be performed without having to send an RPC to another node.
+</Note>
+
+Now that the node has the location of the range where the key from the request resides, it sends the KV operations from the request along to the range using the `DistSender` machinery in a `BatchRequest`.
+
+## Components
+
+### gRPC
+
+gRPC is the software nodes use to communicate with one another. Because the distribution layer is the first layer to communicate with other nodes, CockroachDB implements gRPC here.
+
+gRPC requires inputs and outputs to be formatted as protocol buffers (protobufs). To leverage gRPC, CockroachDB implements a protocol-buffer-based API.
+
+### BatchRequest
+
+All KV operation requests are bundled into a protobuf known as a `BatchRequest`. The destination of this batch is identified in the `BatchRequest` header, as well as a pointer to the request's transaction record.
+
+This `BatchRequest` is also what's used to send requests between nodes using gRPC, which accepts and sends protocol buffers.
+
+### DistSender
+
+The gateway/coordinating node's `DistSender` receives `BatchRequest`s from its own `TxnCoordSender`. `DistSender` is then responsible for breaking up `BatchRequests` and routing a new set of `BatchRequests` to the nodes it identifies contain the data using the system meta ranges.
+
+It sends the `BatchRequest`s to the replicas of a range, ordered in expectation of request latency. The leaseholder is tried first, if the request needs it. Requests received by a non-leaseholder may fail with an error pointing at the replica's last known leaseholder. These requests are retried transparently with the updated lease by the gateway node and never reach the client.
+
+As nodes begin replying to these commands, `DistSender` also aggregates the results in preparation for returning them to the client.
+
+## Range operations
+
+### Range descriptors
+
+Each range in CockroachDB contains metadata, known as a range descriptor. A range descriptor is comprised of the following:
+
+- A sequential RangeID
+- The keyspace (i.e., the set of keys) the range contains
+- The addresses of nodes containing replicas of the range
+
+Range descriptors are updated whenever there are:
+
+- Membership changes to a range's Raft group
+- Range splits
+- Range merges
+
+All of these updates to the range descriptor occur locally on the range, and then propagate to the `meta2` range.
+
+### Range splits
+
+By default, CockroachDB attempts to keep ranges/replicas at the default range size. Once a range reaches that limit, it splits into two smaller ranges (composed of contiguous key spaces).
+
+During this range split, the node creates a new Raft group containing all of the same members as the range that was split. The fact that there are now two ranges also means that there is a transaction that updates `meta2` with the new keyspace boundaries, as well as the addresses of the nodes using the range descriptor.
+
+### Range merges
+
+By default, CockroachDB automatically merges small ranges of data together to form fewer, larger ranges (up to the default range size). This can improve both query latency and cluster survivability.
+
+#### How range merges work
+
+CockroachDB splits your cluster's data into many ranges. As you delete data from your cluster, a range might contain far less data than the default range size. Over the lifetime of a cluster, this could lead to a number of small ranges.
+
+To reduce the number of small ranges, your cluster can have any range below a certain size threshold try to merge with its "right-hand neighbor"—the range that starts where the current range ends.
+
+If the combined size of the small range and its neighbor is less than the maximum range size, the ranges merge into a single range.
+
+<Info>
+When ranges merge, the left-hand-side (LHS) range consumes the right-hand-side (RHS) range.
+</Info>
+
+#### Why range merges improve performance
+
+**Query latency**
+
+Queries in CockroachDB must contact a replica of each range involved in the query. This creates the following issues for clusters with many small ranges:
+
+- Queries incur a fixed overhead in terms of processing time for each range they must coordinate with.
+- Having many small ranges can increase the number of machines your query must coordinate with. This exposes your query to a greater likelihood of running into issues like network latency or overloaded nodes.
+
+By merging small ranges, CockroachDB can greatly reduce the number of ranges involved in queries, thus reducing query latency.
+
+**Survivability**
+
+CockroachDB automatically rebalances the distribution of ranges in your cluster whenever nodes come online or go offline.
+
+During rebalancing, it's better to replicate a few larger ranges across nodes than many smaller ranges. Replicating larger ranges requires less coordination and often completes more quickly.
+
+By merging smaller ranges together, your cluster needs to rebalance fewer total ranges. This ultimately improves your cluster's performance, especially in the face of availability events like node outages.
+
+## Interactions with other layers
+
+In relationship to other layers in CockroachDB, the distribution layer:
+
+- Receives requests from the transaction layer on the same node
+- Identifies which nodes should receive the request, and then sends the request to the proper node's replication layer
+
+## What's next?
+
+Learn how CockroachDB copies data and ensures consistency in the [replication layer](/architecture/replication-layer).

@@ -1,0 +1,518 @@
+---
+title: Backup and Restore in CockroachDB Cloud
+description: Learn about backup and restore options for CockroachDB Cloud clusters.
+---
+
+CockroachDB Cloud provides comprehensive backup and restore capabilities to protect your data and enable disaster recovery.
+
+## Overview
+
+CockroachDB Cloud offers two types of backups:
+
+1. **Managed Backups**: Automated backups managed by Cockroach Labs
+2. **Self-Managed Backups**: Manual backups you control and store in your own cloud storage
+
+## Managed Backups
+
+All CockroachDB Cloud clusters include automatic managed backups at no additional cost (storage costs apply for some plans).
+
+### Managed Backup Features
+
+- **Automatic scheduling**: Backups run automatically based on configured frequency
+- **Retention management**: Old backups are automatically removed based on retention policy
+- **Secure storage**: Backups stored in Cockroach Labs-managed cloud storage
+- **Point-in-time recovery**: Restore to specific timestamps (with revision history)
+- **Incremental backups**: Efficient storage using incremental backup chains
+
+### Backup Settings by Plan
+
+<Tabs>
+  <Tab title="Basic">
+    **Basic Cluster Backups:**
+    - **Frequency**: Daily (not configurable)
+    - **Retention**: 30 days (not configurable)
+    - **Storage**: Included in RU pricing
+    - **Restoration**: To same cluster or new cluster
+  </Tab>
+  
+  <Tab title="Standard">
+    **Standard Cluster Backups:**
+    - **Frequency**: Daily or more frequent (hourly available)
+    - **Retention**: 1-365 days (configurable)
+    - **Storage**: Usage-based pricing, tiered rates
+    - **Restoration**: To same cluster or new cluster
+    - **Features**: Full and incremental backups
+  </Tab>
+  
+  <Tab title="Advanced">
+    **Advanced Cluster Backups:**
+    - **Frequency**: Daily or more frequent (hourly available)
+    - **Retention**: 1-365 days (configurable)
+    - **Storage**: Usage-based pricing, tiered rates
+    - **Restoration**: To same cluster or new cluster
+    - **Features**: Full and incremental backups, CMEK encryption
+  </Tab>
+</Tabs>
+
+### Configure Managed Backups
+
+<Steps>
+  <Step title="Navigate to Backups">
+    1. Select your cluster
+    2. Click **Backup and Restore** in the left navigation
+  </Step>
+  
+  <Step title="Adjust Settings">
+    Click **Settings** and configure:
+    
+    **Frequency:**
+    - Daily (default)
+    - Every 4 hours
+    - Every 1 hour
+    
+    **Retention:**
+    - Enter number of days (1-365)
+    - Default: 30 days
+  </Step>
+  
+  <Step title="Save Configuration">
+    Click **Save** to apply changes
+  </Step>
+</Steps>
+
+<Info>
+Backup frequency and retention changes apply to new backups. Existing backups follow their original retention schedule.
+</Info>
+
+### View Managed Backups
+
+Access backup history and details:
+
+<Steps>
+  <Step title="Go to Backup List">
+    Navigate to **Backup and Restore** page for your cluster
+  </Step>
+  
+  <Step title="Review Backups">
+    The list shows:
+    - Backup timestamp
+    - Backup type (full or incremental)
+    - Size
+    - Status
+    - Expiration date
+  </Step>
+  
+  <Step title="View Details">
+    Click any backup to see:
+    - Backup UUID
+    - Databases included
+    - Backup chain information
+    - Download connection details (for recovery)
+  </Step>
+</Steps>
+
+## Restore from Managed Backup
+
+Restore your cluster from a managed backup:
+
+<Steps>
+  <Step title="Select Backup">
+    1. Go to **Backup and Restore** page
+    2. Find the backup to restore
+    3. Click **Restore**
+  </Step>
+  
+  <Step title="Choose Restore Target">
+    Select where to restore:
+    - **This cluster**: Overwrites current data
+    - **New cluster**: Creates new cluster with backup data
+  </Step>
+  
+  <Step title="Configure Restore">
+    For new cluster restoration:
+    1. Name the new cluster
+    2. Select plan and configuration
+    3. Review cost estimate
+  </Step>
+  
+  <Step title="Start Restoration">
+    1. Review restore details
+    2. Click **Restore**
+    3. Monitor progress on the Backups page
+  </Step>
+</Steps>
+
+<Warning>
+**Restoring to existing cluster**: This operation will overwrite all current data. Ensure you have a recent backup before proceeding.
+</Warning>
+
+### Point-in-Time Recovery
+
+Restore to a specific timestamp (requires revision history):
+
+<Steps>
+  <Step title="Initiate Restore">
+    Click **Restore** on a backup with revision history
+  </Step>
+  
+  <Step title="Select Timestamp">
+    1. Choose **Point-in-time**
+    2. Enter desired timestamp or use date picker
+    3. Must be within backup's revision history window
+  </Step>
+  
+  <Step title="Complete Restore">
+    Select target and click **Restore**
+  </Step>
+</Steps>
+
+## Self-Managed Backups
+
+Take manual backups to your own cloud storage for additional control.
+
+### Benefits of Self-Managed Backups
+
+- **Full control**: You manage backup storage and lifecycle
+- **Custom schedules**: Create backup schedules via SQL
+- **Cloud storage**: Use your AWS S3, GCS, or Azure Blob storage
+- **Encryption**: Optional encryption with KMS or passphrase
+- **Locality-aware**: Partition backups by node locality
+
+### Set Up Cloud Storage
+
+Configure authentication to your cloud storage:
+
+<Tabs>
+  <Tab title="AWS S3">
+    **Using IAM Role (Recommended):**
+    
+    ```sql
+    BACKUP DATABASE bank 
+    INTO 's3://bucket-name/backup-path?AUTH=implicit&AWS_ACCESS_KEY_ID={key}&AWS_SECRET_ACCESS_KEY={secret}'
+    ```
+    
+    **Using Access Keys:**
+    
+    ```sql
+    BACKUP DATABASE bank 
+    INTO 's3://bucket-name/backup-path?AWS_ACCESS_KEY_ID={key}&AWS_SECRET_ACCESS_KEY={secret}'
+    ```
+  </Tab>
+  
+  <Tab title="Google Cloud Storage">
+    **Using Service Account:**
+    
+    ```sql
+    BACKUP DATABASE bank 
+    INTO 'gs://bucket-name/backup-path?AUTH=implicit'
+    ```
+    
+    **With Credentials:**
+    
+    ```sql
+    BACKUP DATABASE bank 
+    INTO 'gs://bucket-name/backup-path?CREDENTIALS={base64-encoded-key}'
+    ```
+  </Tab>
+  
+  <Tab title="Azure Blob Storage">
+    ```sql
+    BACKUP DATABASE bank 
+    INTO 'azure://bucket-name/backup-path?AZURE_ACCOUNT_NAME={account}&AZURE_ACCOUNT_KEY={key}'
+    ```
+  </Tab>
+</Tabs>
+
+### Create Full Backup
+
+Create a complete backup of your data:
+
+```sql
+-- Backup entire cluster
+BACKUP INTO 's3://bucket/full-backup-path?AUTH=implicit';
+
+-- Backup specific database
+BACKUP DATABASE mydb INTO 's3://bucket/db-backup-path?AUTH=implicit';
+
+-- Backup specific tables
+BACKUP TABLE mydb.table1, mydb.table2 
+INTO 's3://bucket/table-backup-path?AUTH=implicit';
+```
+
+### Create Incremental Backup
+
+Incremental backups save only changes since the last backup:
+
+```sql
+-- Create incremental backup
+BACKUP INTO LATEST IN 's3://bucket/backup-path?AUTH=implicit';
+```
+
+### Schedule Automated Backups
+
+Create a backup schedule:
+
+```sql
+-- Daily full backups at 2 AM UTC, hourly incrementals
+CREATE SCHEDULE daily_backup
+  FOR BACKUP INTO 's3://bucket/scheduled-backup?AUTH=implicit'
+  RECURRING '@daily'
+  FULL BACKUP '@weekly'
+  WITH SCHEDULE OPTIONS ignore_existing_backups;
+```
+
+**Schedule Options:**
+- `@hourly`, `@daily`, `@weekly`, `@monthly`
+- Cron expressions: `0 2 * * *` (2 AM daily)
+- `FULL BACKUP` cadence for full vs incremental
+
+### Backup with Revision History
+
+Enable point-in-time recovery:
+
+```sql
+BACKUP DATABASE bank 
+INTO 's3://bucket/backup-path?AUTH=implicit'
+WITH revision_history;
+```
+
+Revision history allows restoration to any point within the garbage collection window.
+
+### Encrypted Backups
+
+Encrypt backups for additional security:
+
+<Tabs>
+  <Tab title="Passphrase">
+    ```sql
+    BACKUP DATABASE bank 
+    INTO 's3://bucket/backup?AUTH=implicit'
+    WITH encryption_passphrase = 'my-secret-passphrase';
+    ```
+  </Tab>
+  
+  <Tab title="AWS KMS">
+    ```sql
+    BACKUP DATABASE bank 
+    INTO 's3://bucket/backup?AUTH=implicit&AWS_ACCESS_KEY_ID={key}&AWS_SECRET_ACCESS_KEY={secret}'
+    WITH kms = 'aws:///arn:aws:kms:region:account:key/key-id';
+    ```
+  </Tab>
+  
+  <Tab title="GCP KMS">
+    ```sql
+    BACKUP DATABASE bank 
+    INTO 'gs://bucket/backup?AUTH=implicit'
+    WITH kms = 'gs:///projects/project/locations/region/keyRings/ring/cryptoKeys/key';
+    ```
+  </Tab>
+</Tabs>
+
+### Restore from Self-Managed Backup
+
+Restore data from your cloud storage:
+
+```sql
+-- Restore full database
+RESTORE DATABASE bank 
+FROM LATEST IN 's3://bucket/backup-path?AUTH=implicit';
+
+-- Restore specific tables
+RESTORE TABLE bank.accounts 
+FROM LATEST IN 's3://bucket/backup-path?AUTH=implicit';
+
+-- Restore to specific timestamp
+RESTORE DATABASE bank 
+FROM LATEST IN 's3://bucket/backup-path?AUTH=implicit'
+AS OF SYSTEM TIME '2024-01-15 10:00:00';
+```
+
+<Info>
+Restores run as jobs. Monitor progress with `SHOW JOBS`.
+</Info>
+
+## Backup Monitoring
+
+Monitor backup jobs and health:
+
+### View Backup Jobs
+
+```sql
+-- Show all backup jobs
+SHOW JOBS SELECT * FROM [SHOW JOBS] WHERE job_type = 'BACKUP';
+
+-- Show running backup jobs
+SHOW JOBS SELECT * FROM [SHOW JOBS] 
+WHERE job_type = 'BACKUP' AND status = 'running';
+```
+
+### View Backup Details
+
+```sql
+-- Show backup contents
+SHOW BACKUP LATEST IN 's3://bucket/backup-path?AUTH=implicit';
+
+-- Show backup with details
+SHOW BACKUP LATEST IN 's3://bucket/backup-path?AUTH=implicit'
+WITH check_files;
+```
+
+### Monitor in Cloud Console
+
+Track backups in the Cloud Console:
+
+- **Backup and Restore** page: View managed backup history
+- **Jobs** page: Monitor backup job progress
+- **Metrics** page: Backup-related metrics
+- **Alerts**: Configure alerts for backup failures
+
+## Backup Best Practices
+
+### Retention Policy
+
+<Card title="Recommended Retention" icon="clock">
+  - **Production**: 30-90 days
+  - **Compliance**: Based on regulatory requirements
+  - **Development**: 7-14 days
+  - **Cost vs. Risk**: Balance storage costs with recovery needs
+</Card>
+
+### Backup Frequency
+
+**Frequency Recommendations:**
+- **Critical data**: Hourly backups
+- **Production**: Daily backups
+- **Development**: Daily or less frequent
+- **Consider**: RPO (Recovery Point Objective) requirements
+
+### Testing Restores
+
+Regularly test backup restoration:
+
+<Steps>
+  <Step title="Schedule Tests">
+    Test restores monthly or quarterly
+  </Step>
+  
+  <Step title="Validate Data">
+    Verify restored data integrity and completeness
+  </Step>
+  
+  <Step title="Measure Time">
+    Track restoration time for disaster recovery planning
+  </Step>
+  
+  <Step title="Document Process">
+    Maintain runbooks for restore procedures
+  </Step>
+</Steps>
+
+### Multiple Backup Strategies
+
+Implement defense in depth:
+
+- Use both managed and self-managed backups
+- Store backups in multiple regions
+- Keep backups in different cloud providers
+- Maintain offline backup copies for critical data
+
+## Disaster Recovery
+
+### Recovery Point Objective (RPO)
+
+RPO is the maximum acceptable data loss:
+
+| Backup Frequency | RPO |
+|------------------|-----|
+| Hourly | 1 hour |
+| Daily | 24 hours |
+| Weekly | 7 days |
+
+### Recovery Time Objective (RTO)
+
+RTO is the maximum acceptable downtime:
+
+**Factors Affecting RTO:**
+- Backup size
+- Network bandwidth
+- Cluster capacity
+- Restore complexity
+
+**Typical Restore Times:**
+- Small clusters (under 100 GB): 15-30 minutes
+- Medium clusters (100GB-1TB): 1-3 hours
+- Large clusters (over 1TB): Several hours
+
+### DR Planning
+
+<Steps>
+  <Step title="Define Requirements">
+    Establish RPO and RTO requirements
+  </Step>
+  
+  <Step title="Design Strategy">
+    Choose backup frequency and retention
+  </Step>
+  
+  <Step title="Test Regularly">
+    Perform restore tests and measure times
+  </Step>
+  
+  <Step title="Document Procedures">
+    Create detailed recovery runbooks
+  </Step>
+  
+  <Step title="Review and Update">
+    Revisit DR plan quarterly
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Backup Failed
+
+**Common Causes:**
+- Insufficient storage space
+- Authentication failures
+- Network connectivity issues
+- Concurrent schema changes
+
+**Solutions:**
+1. Check error message in job details
+2. Verify cloud storage credentials
+3. Ensure adequate storage space
+4. Retry backup after resolving issues
+
+### Restore Failed
+
+**Common Causes:**
+- Incompatible CockroachDB versions
+- Corrupt backup files
+- Insufficient cluster capacity
+- Schema conflicts
+
+**Solutions:**
+1. Verify backup integrity with `SHOW BACKUP`
+2. Check cluster has sufficient capacity
+3. Review CockroachDB version compatibility
+4. Contact Support if issues persist
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Monitor Backups" icon="chart-line" href="/cloud/monitoring">
+    Set up backup monitoring and alerts
+  </Card>
+  
+  <Card title="Cloud Storage" icon="cloud" href="https://www.cockroachlabs.com/docs/stable/use-cloud-storage">
+    Configure cloud storage authentication
+  </Card>
+  
+  <Card title="Backup SQL" icon="database" href="https://www.cockroachlabs.com/docs/stable/backup">
+    Learn detailed backup SQL syntax
+  </Card>
+  
+  <Card title="Disaster Recovery" icon="life-ring" href="https://www.cockroachlabs.com/docs/stable/disaster-recovery-overview">
+    Plan comprehensive DR strategy
+  </Card>
+</CardGroup>

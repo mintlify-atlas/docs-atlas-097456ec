@@ -1,0 +1,191 @@
+---
+title: INSERT
+description: Insert one or more rows into a table with the INSERT statement.
+---
+
+The `INSERT` statement inserts one or more rows into a table. In cases where inserted values conflict with uniqueness constraints, the `ON CONFLICT` clause can be used to update rather than insert rows.
+
+## Required privileges
+
+You must have the `INSERT` privilege on the table.
+
+To use `ON CONFLICT`, you must also have the `SELECT` privilege on the table.
+
+To use `ON CONFLICT DO UPDATE`, you must additionally have the `UPDATE` privilege on the table.
+
+## Syntax
+
+```sql
+[WITH common_table_expr [, ...]]
+INSERT INTO table_name [(column_name [, ...])]
+  {DEFAULT VALUES | select_stmt | VALUES (value [, ...]) [, ...]}
+  [ON CONFLICT ...]  
+  [RETURNING ...];
+```
+
+## Parameters
+
+<ParamField path="common_table_expr" type="expression">
+  See Common Table Expressions.
+</ParamField>
+
+<ParamField path="table_name" type="identifier">
+  The table into which data is written.
+</ParamField>
+
+<ParamField path="AS table_alias_name" type="alias">
+  An alias for the table name. When you provide an alias, it completely hides the actual table name.
+</ParamField>
+
+<ParamField path="column_name" type="identifier">
+  The name of a column to populate during the insert.
+</ParamField>
+
+<ParamField path="select_stmt" type="query">
+  A selection query. Each value must match the data type of its column. If column names are listed after `INTO`, values must be in corresponding order; otherwise, they must follow the declared order of the columns in the table.
+</ParamField>
+
+<ParamField path="DEFAULT VALUES" type="keyword">
+  To fill all columns with their default values, use `DEFAULT VALUES` in place of `select_stmt`. To fill a specific column with its default value, leave the value out of the `select_stmt` or use `DEFAULT` at the appropriate position.
+</ParamField>
+
+<ParamField path="RETURNING target_list" type="clause">
+  Return values based on rows inserted, where `target_list` can be specific column names from the table, `*` for all columns, or computations using scalar expressions.
+</ParamField>
+
+## ON CONFLICT clause
+
+Normally, when inserted values conflict with a `UNIQUE` constraint on one or more columns, CockroachDB returns an error. To update the affected rows instead, use an `ON CONFLICT` clause containing the column(s) with the unique constraint and the `DO UPDATE SET` expression.
+
+To prevent the affected rows from updating while allowing new rows to be inserted, set `ON CONFLICT` to `DO NOTHING`.
+
+### INSERT ON CONFLICT vs. UPSERT
+
+As an alternative to `INSERT ... ON CONFLICT ... DO UPDATE`, you can use the `UPSERT` statement. For example, the following statements are equivalent:
+
+```sql
+INSERT INTO t (a, b, ..., n)
+VALUES ('1', '2', ..., 'n')
+ON CONFLICT DO UPDATE SET
+  a = '1',
+  b = '2',
+  ...
+  n = 'n';
+```
+
+```sql
+UPSERT INTO t (a, b, ..., n)
+VALUES ('1', '2', ..., 'n');
+```
+
+However, `UPSERT` does not let you specify columns to infer a unique constraint as an arbiter. `UPSERT` always uses the primary key as the arbiter.
+
+## Performance best practices
+
+When generating and retrieving unique IDs, use the `RETURNING` clause with `INSERT`.
+
+### Bulk inserts
+
+For existing tables:
+- Perform a multi-row `INSERT` in one statement in an implicit transaction
+- Do not use large batches of 100,000 rows or more, which can lead to long-running transactions
+- Experimentally determine the optimal batch size for your application
+
+## Examples
+
+### Insert a single row
+
+```sql
+INSERT INTO users (id, city, name, address, credit_card) 
+VALUES ('c28f5c28-f5c2-4000-8000-000000000026', 'new york', 'Petee', '101 5th Ave', '1234567890');
+```
+
+```sql
+SELECT * FROM users WHERE city='new york';
+```
+
+If you do not list column names, the statement will use the columns of the table in their declared order:
+
+```sql
+INSERT INTO users 
+VALUES ('1eb851eb-851e-4800-8000-000000000006', 'chicago', 'Adam Driver', '201 E Randolph St', '2468013579');
+```
+
+### Insert multiple rows
+
+```sql
+INSERT INTO users (id, city, name, address, credit_card) 
+VALUES
+  ('8a3d70a3-d70a-4000-8000-00000000001b', 'seattle', 'Eric', '400 Broad St', '0987654321'),
+  ('9eb851eb-851e-4800-8000-00000000001f', 'new york', 'Harry Potter', '214 W 43rd St', '5678901234');
+```
+
+### Insert from a SELECT statement
+
+Suppose you want to create a `drivers` table from a subset of the `users` table:
+
+```sql
+CREATE TABLE drivers (
+  id UUID DEFAULT gen_random_uuid(),
+  city STRING,
+  name STRING,
+  dl STRING UNIQUE CHECK (LENGTH(dl) < 8),
+  address STRING,
+  CONSTRAINT "primary" PRIMARY KEY (city ASC, id ASC)
+);
+```
+
+```sql
+INSERT INTO drivers (id, city, name, address)
+  SELECT id, city, name, address FROM users
+  WHERE name IN ('Anita Atkinson', 'Devin Jordan');
+```
+
+### Insert default values
+
+To check the default values for columns in a table, use the `SHOW CREATE TABLE` statement.
+
+If the `DEFAULT` value constraint is not specified and an explicit value is not given, a value of `NULL` is assigned to the column.
+
+```sql
+INSERT INTO drivers (city, name) VALUES ('seattle', 'Bobby');
+```
+
+```sql
+INSERT INTO drivers (city, name, id) VALUES ('chicago', 'Terry', DEFAULT);
+```
+
+### Insert and return values
+
+In this example, the `RETURNING` clause returns the `id` values of the rows inserted:
+
+```sql
+INSERT INTO drivers (city, name)
+  VALUES ('seattle', 'Bobby'), ('chicago', 'Terry')
+  RETURNING id;
+```
+
+### Update values ON CONFLICT
+
+```sql
+INSERT INTO users (id, city, name)
+  VALUES ('8a3d70a3-d70a-4000-8000-00000000001b', 'seattle', 'Eric')
+  ON CONFLICT (id)
+  DO UPDATE SET name = excluded.name;
+```
+
+### Do not update values ON CONFLICT
+
+```sql
+INSERT INTO users (id, city, name)
+  VALUES ('8a3d70a3-d70a-4000-8000-00000000001b', 'seattle', 'Eric')
+  ON CONFLICT (id)
+  DO NOTHING;
+```
+
+## See also
+
+- UPSERT
+- UPDATE
+- DELETE
+- SELECT

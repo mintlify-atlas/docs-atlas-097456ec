@@ -1,0 +1,510 @@
+---
+title: SQL Functions and Operators
+description: Reference guide for built-in SQL functions and operators in CockroachDB
+---
+
+CockroachDB supports a comprehensive set of built-in SQL functions and operators for use in scalar expressions, aggregate operations, and window functions.
+
+<Tip>
+  In the `cockroach sql` shell, use `\hf [function]` to get inline help about a specific function.
+</Tip>
+
+## Function Volatility
+
+Every function has a volatility classification that tells the optimizer how the function behaves:
+
+| Type | Description | Examples |
+|------|-------------|----------|
+| **Volatile** | Can modify database state and may return different results with the same arguments in different contexts. | `random`, `nextval`, `now` |
+| **Stable** | Returns the same results with the same arguments within a single statement. The optimizer can optimize multiple calls to a single call. | `current_timestamp`, `current_date` |
+| **Immutable** | Always returns the same results with the same arguments in any context. The optimizer can pre-evaluate the function with constant arguments. | `log`, `abs`, `from_json` |
+| **Leakproof** | Immutable and conveys no information about arguments except via the return value. Never throws errors based on argument values. | Integer comparison functions |
+
+## String Functions
+
+Manipulate and analyze text data.
+
+<Tabs>
+  <Tab title="Basic String Functions">
+    ```sql
+    -- Concatenation
+    SELECT 'Hello' || ' ' || 'World';
+    -- Result: 'Hello World'
+
+    -- Length
+    SELECT length('CockroachDB');
+    -- Result: 11
+
+    -- Substring
+    SELECT substring('CockroachDB', 1, 9);
+    -- Result: 'Cockroach'
+
+    -- Upper/Lower case
+    SELECT upper('hello'), lower('WORLD');
+    -- Result: 'HELLO', 'world'
+
+    -- Trim whitespace
+    SELECT trim('  spaces  ');
+    -- Result: 'spaces'
+    ```
+  </Tab>
+
+  <Tab title="Pattern Matching">
+    ```sql
+    -- LIKE pattern matching
+    SELECT * FROM users WHERE email LIKE '%@example.com';
+
+    -- Regular expressions
+    SELECT 'abc123' ~ '[0-9]+';
+    -- Result: true
+
+    -- Case-insensitive regex
+    SELECT 'ABC' ~* 'abc';
+    -- Result: true
+
+    -- Replace with regex
+    SELECT regexp_replace('hello world', 'world', 'CockroachDB');
+    -- Result: 'hello CockroachDB'
+    ```
+  </Tab>
+
+  <Tab title="String Splitting">
+    ```sql
+    -- Split string into array
+    SELECT string_to_array('a,b,c', ',');
+    -- Result: {a,b,c}
+
+    -- Split string with regexp
+    SELECT regexp_split_to_array('hello  world', '\s+');
+    -- Result: {hello,world}
+    ```
+  </Tab>
+</Tabs>
+
+## Numeric Functions
+
+Perform mathematical operations and calculations.
+
+<ParamField path="abs(x)" type="numeric">
+  Return the absolute value of a number.
+
+  ```sql
+  SELECT abs(-42);
+  -- Result: 42
+  ```
+</ParamField>
+
+<ParamField path="ceil(x), floor(x)" type="numeric">
+  Round to the nearest integer.
+
+  ```sql
+  SELECT ceil(3.2), floor(3.8);
+  -- Result: 4, 3
+  ```
+</ParamField>
+
+<ParamField path="round(x [, n])" type="numeric">
+  Round to n decimal places (default 0).
+
+  ```sql
+  SELECT round(3.14159, 2);
+  -- Result: 3.14
+  ```
+</ParamField>
+
+<ParamField path="power(x, y)" type="numeric">
+  Raise x to the power of y.
+
+  ```sql
+  SELECT power(2, 10);
+  -- Result: 1024
+  ```
+</ParamField>
+
+<CodeGroup>
+```sql Mathematical Operations
+-- Square root
+SELECT sqrt(16);  -- Result: 4
+
+-- Exponential and logarithm
+SELECT exp(1), ln(2.718281828);
+
+-- Trigonometric
+SELECT sin(0), cos(0), tan(0);
+```
+
+```sql Random Numbers
+-- Random float between 0 and 1
+SELECT random();
+
+-- Random UUID
+SELECT gen_random_uuid();
+
+-- Random integer
+SELECT floor(random() * 100)::INT;
+```
+</CodeGroup>
+
+## Date and Time Functions
+
+Work with temporal data.
+
+<Tabs>
+  <Tab title="Current Time">
+    ```sql
+    -- Current timestamp
+    SELECT now();
+    SELECT current_timestamp();
+
+    -- Current date
+    SELECT current_date();
+
+    -- Current time
+    SELECT current_time();
+
+    -- Statement time (stable within transaction)
+    SELECT statement_timestamp();
+    ```
+  </Tab>
+
+  <Tab title="Date Arithmetic">
+    ```sql
+    -- Add/subtract intervals
+    SELECT now() + INTERVAL '1 day';
+    SELECT now() - INTERVAL '1 hour';
+
+    -- Date difference
+    SELECT age(TIMESTAMP '2024-01-01', TIMESTAMP '2020-01-01');
+
+    -- Extract parts
+    SELECT extract(year FROM now());
+    SELECT extract(month FROM now());
+    SELECT extract(day FROM now());
+    ```
+  </Tab>
+
+  <Tab title="Date Formatting">
+    ```sql
+    -- Format timestamp
+    SELECT to_char(now(), 'YYYY-MM-DD HH24:MI:SS');
+
+    -- Parse string to timestamp
+    SELECT to_timestamp('2024-01-25', 'YYYY-MM-DD');
+
+    -- Truncate to period
+    SELECT date_trunc('day', now());
+    SELECT date_trunc('hour', now());
+    SELECT date_trunc('month', now());
+    ```
+  </Tab>
+</Tabs>
+
+## Aggregate Functions
+
+Compute single values from multiple rows.
+
+<ParamField path="count(*)" type="aggregate">
+  Count the number of rows.
+
+  ```sql
+  SELECT count(*) FROM orders WHERE status = 'shipped';
+  ```
+</ParamField>
+
+<ParamField path="sum(x), avg(x)" type="aggregate">
+  Calculate sum and average.
+
+  ```sql
+  SELECT sum(total), avg(total) FROM orders;
+  ```
+</ParamField>
+
+<ParamField path="min(x), max(x)" type="aggregate">
+  Find minimum and maximum values.
+
+  ```sql
+  SELECT min(created_at), max(created_at) FROM users;
+  ```
+</ParamField>
+
+<CodeGroup>
+```sql Statistical Functions
+-- Standard deviation and variance
+SELECT stddev(price), variance(price) FROM products;
+
+-- Correlation
+SELECT corr(price, quantity) FROM sales;
+```
+
+```sql String Aggregation
+-- Concatenate strings
+SELECT string_agg(name, ', ' ORDER BY name)
+FROM users
+WHERE status = 'active';
+
+-- Concatenate with array
+SELECT array_agg(id ORDER BY created_at)
+FROM orders;
+```
+</CodeGroup>
+
+## Window Functions
+
+Perform calculations across sets of rows related to the current row.
+
+<Tabs>
+  <Tab title="Ranking">
+    ```sql
+    -- Row number
+    SELECT username, created_at,
+      row_number() OVER (ORDER BY created_at) AS rn
+    FROM users;
+
+    -- Rank with gaps
+    SELECT product, price,
+      rank() OVER (ORDER BY price DESC) AS rank
+    FROM products;
+
+    -- Dense rank (no gaps)
+    SELECT product, price,
+      dense_rank() OVER (ORDER BY price DESC) AS rank
+    FROM products;
+    ```
+  </Tab>
+
+  <Tab title="Offset Functions">
+    ```sql
+    -- Previous row value
+    SELECT date, amount,
+      lag(amount, 1) OVER (ORDER BY date) AS prev_amount
+    FROM sales;
+
+    -- Next row value
+    SELECT date, amount,
+      lead(amount, 1) OVER (ORDER BY date) AS next_amount
+    FROM sales;
+
+    -- First and last values
+    SELECT date, amount,
+      first_value(amount) OVER (ORDER BY date) AS first_amt,
+      last_value(amount) OVER (ORDER BY date) AS last_amt
+    FROM sales;
+    ```
+  </Tab>
+
+  <Tab title="Aggregates">
+    ```sql
+    -- Running total
+    SELECT date, amount,
+      sum(amount) OVER (ORDER BY date) AS running_total
+    FROM sales;
+
+    -- Moving average
+    SELECT date, amount,
+      avg(amount) OVER (
+        ORDER BY date
+        ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+      ) AS moving_avg_7days
+    FROM sales;
+
+    -- Partition by category
+    SELECT category, product, price,
+      avg(price) OVER (PARTITION BY category) AS category_avg
+    FROM products;
+    ```
+  </Tab>
+</Tabs>
+
+## JSON Functions
+
+Work with JSONB data.
+
+<ParamField path="->" type="jsonb">
+  Access a JSONB field, returning JSONB.
+
+  ```sql
+  SELECT data->'name' FROM users;
+  ```
+</ParamField>
+
+<ParamField path="->>" type="jsonb">
+  Access a JSONB field, returning text.
+
+  ```sql
+  SELECT data->>'email' FROM users;
+  ```
+</ParamField>
+
+<ParamField path="jsonb_array_elements" type="jsonb">
+  Expand a JSONB array to rows.
+
+  ```sql
+  SELECT jsonb_array_elements('[1,2,3]'::JSONB);
+  ```
+</ParamField>
+
+<CodeGroup>
+```sql Building JSON
+-- Create JSON object
+SELECT jsonb_build_object(
+  'name', username,
+  'email', email
+) FROM users;
+
+-- Create JSON array
+SELECT jsonb_build_array(1, 2, 3, 4);
+```
+
+```sql Querying JSON
+-- Check if key exists
+SELECT data ? 'email' FROM users;
+
+-- Contains
+SELECT data @> '{"status": "active"}' FROM users;
+
+-- Path access
+SELECT data #> '{address,city}' FROM users;
+```
+</CodeGroup>
+
+## Array Functions
+
+Manipulate array data.
+
+<ParamField path="array_append" type="array">
+  Add an element to the end of an array.
+
+  ```sql
+  SELECT array_append(ARRAY[1,2,3], 4);
+  -- Result: {1,2,3,4}
+  ```
+</ParamField>
+
+<ParamField path="array_length" type="array">
+  Get the length of an array.
+
+  ```sql
+  SELECT array_length(ARRAY[1,2,3,4], 1);
+  -- Result: 4
+  ```
+</ParamField>
+
+<ParamField path="unnest" type="array">
+  Expand an array to rows.
+
+  ```sql
+  SELECT unnest(ARRAY[1,2,3]);
+  -- Results: 1, 2, 3 (three rows)
+  ```
+</ParamField>
+
+## Conditional Expressions
+
+Implement conditional logic in queries.
+
+<Tabs>
+  <Tab title="CASE">
+    ```sql
+    SELECT username,
+      CASE
+        WHEN age < 18 THEN 'minor'
+        WHEN age < 65 THEN 'adult'
+        ELSE 'senior'
+      END AS age_group
+    FROM users;
+    ```
+  </Tab>
+
+  <Tab title="COALESCE">
+    ```sql
+    -- Return first non-NULL value
+    SELECT coalesce(nickname, username, 'Anonymous')
+    FROM users;
+    ```
+  </Tab>
+
+  <Tab title="NULLIF">
+    ```sql
+    -- Return NULL if values are equal
+    SELECT nullif(status, 'deleted')
+    FROM users;
+    ```
+  </Tab>
+
+  <Tab title="IF">
+    ```sql
+    -- Simple conditional
+    SELECT if(price > 100, 'expensive', 'affordable')
+    FROM products;
+    ```
+  </Tab>
+</Tabs>
+
+## Type Conversion Functions
+
+Convert between data types.
+
+<CodeGroup>
+```sql String Conversions
+SELECT 123::STRING;
+SELECT to_char(123, '000');
+SELECT to_char(now(), 'YYYY-MM-DD');
+```
+
+```sql Numeric Conversions
+SELECT '123'::INT;
+SELECT '123.45'::DECIMAL;
+SELECT to_number('1,234.56', '9,999.99');
+```
+
+```sql Timestamp Conversions
+SELECT '2024-01-25'::TIMESTAMP;
+SELECT to_timestamp('2024-01-25', 'YYYY-MM-DD');
+```
+</CodeGroup>
+
+## Operators
+
+CockroachDB supports standard SQL operators with specific precedence rules.
+
+### Arithmetic Operators
+
+| Operator | Description | Example |
+|----------|-------------|----------|
+| `+` | Addition | `5 + 3` = 8 |
+| `-` | Subtraction | `5 - 3` = 2 |
+| `*` | Multiplication | `5 * 3` = 15 |
+| `/` | Division (returns DECIMAL) | `5 / 2` = 2.5 |
+| `//` | Floor division | `5 // 2` = 2 |
+| `%` | Modulo | `5 % 2` = 1 |
+| `^` | Exponentiation | `2 ^ 3` = 8 |
+
+### Comparison Operators
+
+| Operator | Description |
+|----------|-------------|
+| `=` | Equal |
+| `!=`, `<>` | Not equal |
+| `<` | Less than |
+| `>` | Greater than |
+| `<=` | Less than or equal |
+| `>=` | Greater than or equal |
+| `IS NULL` | Is NULL |
+| `IS NOT NULL` | Is not NULL |
+
+### Bitwise Operators
+
+| Operator | Description | Example |
+|----------|-------------|----------|
+| `&` | Bitwise AND | `12 & 10` = 8 |
+| `\|` | Bitwise OR | `12 \| 10` = 14 |
+| `#` | Bitwise XOR | `12 # 10` = 6 |
+| `~` | Bitwise NOT | `~5` = -6 |
+| `<<` | Shift left | `1 << 3` = 8 |
+| `>>` | Shift right | `8 >> 2` = 2 |
+
+## See Also
+
+- [Data Types](/sql/data-types)
+- [SQL Statements](/sql/statements)
+- [User-Defined Functions](https://www.cockroachlabs.com/docs/stable/user-defined-functions)

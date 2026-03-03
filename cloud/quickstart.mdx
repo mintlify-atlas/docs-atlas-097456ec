@@ -1,0 +1,235 @@
+---
+title: CockroachDB Cloud Quickstart
+description: Deploy your first CockroachDB cluster and run your first queries in minutes.
+---
+
+This quickstart shows you how to deploy a CockroachDB cluster using free trial credits and run your first queries.
+
+## Before You Begin
+
+You'll need:
+
+- A CockroachDB Cloud account (sign up at [cockroachlabs.cloud](https://cockroachlabs.cloud))
+- A modern web browser
+- (Optional) Command-line access for SQL client connection
+
+## Create a Free Trial Cluster
+
+<Steps>
+  <Step title="Sign Up">
+    Navigate to [cockroachlabs.cloud](https://cockroachlabs.cloud) and create a new account or sign in with SSO.
+  </Step>
+  
+  <Step title="Start Cluster Creation">
+    Click **Create Cluster** from the Clusters page.
+  </Step>
+  
+  <Step title="Select Plan">
+    Choose **Standard** plan (recommended for trial) and click **Next**.
+  </Step>
+  
+  <Step title="Configure Cluster">
+    - **Cloud Provider**: Select AWS or GCP
+    - **Regions**: Choose a region close to you
+    - **Capacity**: Use default settings (4-8 vCPUs recommended)
+  </Step>
+  
+  <Step title="Apply Trial Credits">
+    The 30-day trial code is automatically applied. Verify you see the trial credit on the summary.
+  </Step>
+  
+  <Step title="Name and Create">
+    Give your cluster a name and click **Create cluster**. Your cluster will be ready in 20-30 seconds.
+  </Step>
+</Steps>
+
+<Info>
+Your trial includes $400 in credits, valid for 30 days. Be sure to delete your trial cluster before the trial expires to avoid charges.
+</Info>
+
+## Create a SQL User
+
+Before connecting to your cluster, you need to create a SQL user.
+
+<Steps>
+  <Step title="Navigate to SQL Users">
+    From your cluster's Overview page, click **SQL Users** in the left navigation.
+  </Step>
+  
+  <Step title="Add New User">
+    Click **Add User** and enter:
+    - **Username**: Choose a username (e.g., `myuser`)
+    - **Password**: Create a strong password
+  </Step>
+  
+  <Step title="Save Credentials">
+    Click **Create** and save your password securely. You won't be able to view it again.
+  </Step>
+</Steps>
+
+## Authorize Your Network
+
+CockroachDB Cloud requires you to authorize networks that can connect to your cluster.
+
+<Steps>
+  <Step title="Go to Networking">
+    Click **Networking** in the left navigation.
+  </Step>
+  
+  <Step title="Add Your IP">
+    Click **Add Network** and select **Current Network** to automatically add your current IP address.
+  </Step>
+  
+  <Step title="Configure Access">
+    - Give it a descriptive name (e.g., "My Office")
+    - Select **CockroachDB Client** to allow SQL connections
+    - Click **Apply**
+  </Step>
+</Steps>
+
+<Warning>
+For production use, remove the `0.0.0.0/0` allowlist entry and add only specific IP ranges your applications will use.
+</Warning>
+
+## Connect to Your Cluster
+
+You can connect to your cluster using the `cockroach` SQL client or any PostgreSQL-compatible driver.
+
+### Using CockroachDB SQL Client
+
+<Steps>
+  <Step title="Download the Client">
+    Download the CockroachDB binary for your operating system from the **Connect** dialog.
+    
+    ```bash
+    # On macOS
+    curl https://binaries.cockroachdb.com/cockroach-latest.darwin-10.9-amd64.tgz | tar -xz
+    
+    # On Linux
+    curl https://binaries.cockroachdb.com/cockroach-latest.linux-amd64.tgz | tar -xz
+    ```
+  </Step>
+  
+  <Step title="Get Connection String">
+    Click **Connect** in the Console and select **CockroachDB Client**. Copy the connection command provided.
+  </Step>
+  
+  <Step title="Connect">
+    Run the connection command in your terminal:
+    
+    ```bash
+    cockroach sql --url "postgresql://myuser:password@cluster-name.cloud.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full"
+    ```
+  </Step>
+</Steps>
+
+### Using Application Connection
+
+For connecting from your application, select your language from the **Connect** dialog:
+
+<CodeGroup>
+```javascript Node.js
+const { Client } = require('pg');
+
+const client = new Client({
+  connectionString: process.env.DATABASE_URL,
+});
+
+client.connect();
+```
+
+```python Python
+import psycopg2
+
+conn = psycopg2.connect(
+    os.environ['DATABASE_URL']
+)
+```
+
+```java Java
+String url = System.getenv("JDBC_DATABASE_URL");
+Connection conn = DriverManager.getConnection(url);
+```
+</CodeGroup>
+
+## Run Your First Query
+
+Once connected, try running some SQL commands:
+
+```sql
+-- Create a database
+CREATE DATABASE bank;
+
+-- Use the database
+USE bank;
+
+-- Create a table
+CREATE TABLE accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  balance DECIMAL(10,2)
+);
+
+-- Insert data
+INSERT INTO accounts (balance) VALUES (1000.50), (2500.75), (500.00);
+
+-- Query data
+SELECT * FROM accounts;
+```
+
+You should see output like:
+
+```
+                   id                  | balance
+---------------------------------------+----------
+  3a8b9c7d-1234-5678-90ab-cdef12345678 | 1000.50
+  4b9c8d7e-2345-6789-01bc-def123456789 | 2500.75
+  5c0d9e8f-3456-7890-12cd-ef1234567890 |  500.00
+(3 rows)
+```
+
+## Monitor Your Cluster
+
+You can monitor your cluster's performance in the Cloud Console:
+
+- **Overview**: View cluster health and key metrics
+- **Metrics**: Detailed performance charts
+- **SQL Activity**: Monitor queries and transactions
+- **Insights**: Performance recommendations
+
+## Clean Up
+
+When you're done experimenting:
+
+<Steps>
+  <Step title="Disable Deletion Protection">
+    Navigate to the cluster's Overview page and disable deletion protection if enabled.
+  </Step>
+  
+  <Step title="Delete the Cluster">
+    Click **Actions** > **Delete cluster** and confirm.
+  </Step>
+</Steps>
+
+<Warning>
+Deleting a cluster permanently removes all data. Make sure to back up any important data before deletion.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Build an App" icon="code" href="https://www.cockroachlabs.com/docs/stable/build-a-python-app-with-cockroachdb">
+    Build a sample application
+  </Card>
+  
+  <Card title="Migrate Data" icon="database" href="https://www.cockroachlabs.com/docs/molt/migration-overview">
+    Migrate your existing data
+  </Card>
+  
+  <Card title="Learn SQL" icon="graduation-cap" href="https://www.cockroachlabs.com/docs/stable/sql-statements">
+    Learn CockroachDB SQL
+  </Card>
+  
+  <Card title="Manage Users" icon="users" href="/cloud/authentication">
+    Create and manage SQL users
+  </Card>
+</CardGroup>

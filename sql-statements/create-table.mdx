@@ -1,0 +1,195 @@
+---
+title: CREATE TABLE
+description: Create a new table in a database with the CREATE TABLE statement.
+---
+
+The `CREATE TABLE` statement creates a new table in a database.
+
+## Required privileges
+
+To create a table, you must have one of the following:
+- Membership to the `admin` role for the cluster
+- Membership to the owner role for the database
+- The `CREATE` privilege on the database
+
+## Syntax
+
+```sql
+CREATE [TEMPORARY | TEMP] TABLE [IF NOT EXISTS] table_name (
+  column_def [, ...]
+  [, constraint_def [, ...]]
+) [WITH storage_parameter_list]
+```
+
+## Parameters
+
+<ParamField path="TEMPORARY | TEMP" type="keyword">
+  Defines the table as a session-scoped temporary table.
+  
+  Note: The `LOCAL`, `GLOBAL`, and `UNLOGGED` options are no-ops, allowed by the parser for PostgreSQL compatibility.
+</ParamField>
+
+<ParamField path="IF NOT EXISTS" type="keyword">
+  Create a new table only if a table of the same name does not already exist in the database. If one does exist, do not return an error.
+  
+  Note: `IF NOT EXISTS` checks the table name only; it does not check if an existing table has the same columns, indexes, constraints, etc., of the new table.
+</ParamField>
+
+<ParamField path="table_name" type="identifier">
+  The name of the table to create, which must be unique within its database. When the parent database is not set as the default, the name must be formatted as `database.name`.
+  
+  Avoid using the name `excluded` for any of your tables, as it's used internally by `UPSERT` and `INSERT ON CONFLICT` statements.
+</ParamField>
+
+<ParamField path="column_def" type="definition">
+  A comma-separated list of column definitions. Each column requires a name/identifier and data type.
+  
+  You can optionally specify column qualifications such as:
+  - Column-level constraints
+  - Collations
+  - Column family assignments
+  - `DEFAULT` expressions
+  - `ON UPDATE` expressions
+  - Identity columns
+  - `NOT VISIBLE` property
+</ParamField>
+
+<ParamField path="constraint_def" type="definition">
+  An optional, comma-separated list of table-level constraints. Constraint names must be unique within the table.
+  
+  Supported constraints:
+  - `PRIMARY KEY`
+  - `UNIQUE`
+  - `CHECK`
+  - `FOREIGN KEY`
+</ParamField>
+
+<ParamField path="index_def" type="definition">
+  An optional, comma-separated list of index definitions. For each index, the column(s) to index must be specified; optionally, a name can be specified.
+  
+  Index names must be unique within the table.
+</ParamField>
+
+## Examples
+
+### Create a table
+
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  city STRING,
+  name STRING,
+  address STRING,
+  credit_card STRING,
+  dl STRING
+);
+```
+
+```sql
+SHOW COLUMNS FROM users;
+```
+
+```
+  column_name | data_type | is_nullable | column_default | indices  
+--------------+-----------+-------------+----------------+-----------
+  id          | UUID      |    false    | NULL           | {primary}
+  city        | VARCHAR   |    false    | NULL           | {primary}
+  name        | VARCHAR   |    true     | NULL           | {primary}
+  address     | VARCHAR   |    true     | NULL           | {primary}
+  credit_card | VARCHAR   |    true     | NULL           | {primary}
+  dl          | STRING    |    true     | NULL           | {primary}
+```
+
+### Create a table with secondary and GIN indexes
+
+```sql
+CREATE TABLE vehicles (
+  id UUID NOT NULL,
+  city STRING NOT NULL,
+  type STRING,
+  owner_id UUID,
+  creation_time TIMESTAMP,
+  status STRING,
+  current_location STRING,
+  ext JSONB,
+  CONSTRAINT "primary" PRIMARY KEY (city ASC, id ASC),
+  INDEX index_status (status),
+  INVERTED INDEX ix_vehicle_ext (ext)
+);
+```
+
+### Create a table with a foreign key constraint
+
+Foreign key constraints guarantee a column uses only values that already exist in the column it references.
+
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  city STRING,
+  name STRING,
+  address STRING,
+  credit_card STRING,
+  dl STRING UNIQUE CHECK (LENGTH(dl) < 8)
+);
+```
+
+```sql
+CREATE TABLE vehicles (
+  id UUID NOT NULL DEFAULT gen_random_uuid(),
+  city STRING NOT NULL,
+  type STRING,
+  owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  creation_time TIMESTAMP,
+  status STRING,
+  current_location STRING,
+  ext JSONB,
+  CONSTRAINT "primary" PRIMARY KEY (city ASC, id ASC)
+);
+```
+
+In this example, `ON DELETE CASCADE` specifies that when a row referenced by a foreign key constraint is deleted, all dependent rows are also deleted.
+
+### Create a table with a check constraint
+
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  city STRING,
+  name STRING,
+  address STRING,
+  credit_card STRING,
+  dl STRING UNIQUE CHECK (LENGTH(dl) < 8)
+);
+```
+
+### Create a table with an identity column
+
+Identity columns are populated with values from a sequence:
+
+```sql
+CREATE TABLE bank (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  order_index INT8 UNIQUE,
+  balance INT8,
+  payload STRING,
+  numerical INT8 GENERATED BY DEFAULT AS IDENTITY (INCREMENT 1 MINVALUE 0 START 0)
+);
+```
+
+### Create a table from a SELECT statement
+
+Use `CREATE TABLE AS` to create a new table from the results of a `SELECT` statement:
+
+```sql
+CREATE TABLE users_ny AS 
+  SELECT * FROM users 
+  WHERE city = 'new york';
+```
+
+## See also
+
+- ALTER TABLE
+- DROP TABLE
+- CREATE INDEX
+- SHOW TABLES
+- SHOW COLUMNS

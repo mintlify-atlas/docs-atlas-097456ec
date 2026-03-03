@@ -1,0 +1,721 @@
+---
+title: ORM Support and Usage
+description: Learn how to use Object-Relational Mapping frameworks with CockroachDB
+---
+
+Object-Relational Mapping (ORM) frameworks provide a high-level abstraction for interacting with databases. CockroachDB supports popular ORMs across multiple programming languages.
+
+## Why Use an ORM?
+
+ORMs provide several benefits for application development:
+
+- **Type safety** - Map database tables to programming language types
+- **Productivity** - Write less boilerplate code for common operations  
+- **Maintainability** - Centralize database logic and schema definitions
+- **Database abstraction** - Switch between databases with minimal code changes
+- **Migration management** - Track and version schema changes
+
+## Supported ORMs by Language
+
+### JavaScript/TypeScript
+
+<Tabs>
+  <Tab title="Prisma">
+    **Support level:** Full
+    
+    Prisma is a modern, type-safe ORM with first-class CockroachDB support.
+    
+    <CodeGroup>
+    ```bash Installation
+    npm install prisma @prisma/client
+    npx prisma init
+    ```
+    
+    ```prisma schema.prisma
+    datasource db {
+      provider = "cockroachdb"
+      url      = env("DATABASE_URL")
+    }
+    
+    generator client {
+      provider = "prisma-client-js"
+    }
+    
+    model Account {
+      id        String   @id @default(dbgenerated("gen_random_uuid()"))
+      balance   Int
+      createdAt DateTime @default(now())
+    }
+    ```
+    
+    ```typescript Usage
+    import { PrismaClient } from '@prisma/client'
+    
+    const prisma = new PrismaClient()
+    
+    // Create
+    const account = await prisma.account.create({
+      data: { balance: 1000 }
+    })
+    
+    // Read
+    const accounts = await prisma.account.findMany({
+      where: { balance: { gte: 500 } }
+    })
+    
+    // Update
+    await prisma.account.update({
+      where: { id: account.id },
+      data: { balance: 1500 }
+    })
+    
+    // Delete
+    await prisma.account.delete({
+      where: { id: account.id }
+    })
+    ```
+    </CodeGroup>
+    
+    **Features:**
+    - Full TypeScript support with generated types
+    - Intuitive data modeling
+    - Automatic migrations
+    - Built-in connection pooling
+  </Tab>
+  
+  <Tab title="Sequelize">
+    **Support level:** Full
+    
+    Sequelize is a promise-based ORM for Node.js. Use the `sequelize-cockroachdb` adapter.
+    
+    <CodeGroup>
+    ```bash Installation
+    npm install sequelize sequelize-cockroachdb
+    ```
+    
+    ```javascript Configuration
+    const Sequelize = require('sequelize-cockroachdb');
+    
+    const sequelize = new Sequelize(process.env.DATABASE_URL, {
+      dialectOptions: {
+        application_name: 'my-app'
+      }
+    });
+    ```
+    
+    ```javascript Model Definition
+    const Account = sequelize.define('Account', {
+      id: {
+        type: Sequelize.UUID,
+        primaryKey: true,
+        defaultValue: Sequelize.literal('gen_random_uuid()')
+      },
+      balance: {
+        type: Sequelize.INTEGER,
+        allowNull: false
+      }
+    });
+    
+    await Account.sync();
+    ```
+    </CodeGroup>
+    
+    <Warning>
+    Use the `sequelize-cockroachdb` package instead of plain Sequelize to handle CockroachDB-specific differences.
+    </Warning>
+  </Tab>
+  
+  <Tab title="TypeORM">
+    **Support level:** Full
+    
+    TypeORM provides TypeScript decorators for elegant data modeling.
+    
+    <CodeGroup>
+    ```typescript Entity
+    import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+    
+    @Entity()
+    export class Account {
+      @PrimaryGeneratedColumn('uuid')
+      id: string;
+      
+      @Column('int')
+      balance: number;
+    }
+    ```
+    
+    ```typescript Configuration
+    import { DataSource } from 'typeorm';
+    
+    const AppDataSource = new DataSource({
+      type: 'cockroachdb',
+      url: process.env.DATABASE_URL,
+      entities: [Account],
+      synchronize: true
+    });
+    
+    await AppDataSource.initialize();
+    ```
+    </CodeGroup>
+  </Tab>
+  
+  <Tab title="Knex.js">
+    **Support level:** Full
+    
+    Knex.js is a SQL query builder that works as a lighter alternative to full ORMs.
+    
+    ```javascript
+    const knex = require('knex')({
+      client: 'pg',
+      connection: process.env.DATABASE_URL
+    });
+    
+    await knex('accounts').insert({ balance: 1000 });
+    const accounts = await knex('accounts').where('balance', '>', 500);
+    ```
+  </Tab>
+</Tabs>
+
+### Python
+
+<Tabs>
+  <Tab title="SQLAlchemy">
+    **Support level:** Full
+    
+    SQLAlchemy is Python's most popular ORM. Use the `sqlalchemy-cockroachdb` dialect for best compatibility.
+    
+    <CodeGroup>
+    ```bash Installation
+    pip install sqlalchemy sqlalchemy-cockroachdb psycopg2
+    ```
+    
+    ```python Model Definition
+    from sqlalchemy import Column, Integer, create_engine
+    from sqlalchemy.dialects.postgresql import UUID
+    from sqlalchemy.orm import declarative_base, sessionmaker
+    import os
+    
+    Base = declarative_base()
+    
+    class Account(Base):
+        __tablename__ = 'accounts'
+        id = Column(UUID(as_uuid=True), primary_key=True)
+        balance = Column(Integer, nullable=False)
+    
+    # Replace postgresql:// with cockroachdb://
+    db_uri = os.environ['DATABASE_URL'].replace(
+        "postgresql://", "cockroachdb://"
+    )
+    engine = create_engine(db_uri)
+    Base.metadata.create_all(engine)
+    ```
+    
+    ```python Using run_transaction
+    from sqlalchemy_cockroachdb import run_transaction
+    
+    def create_account(session, balance):
+        account = Account(balance=balance)
+        session.add(account)
+        return account
+    
+    SessionMaker = sessionmaker(bind=engine)
+    account = run_transaction(SessionMaker, lambda s: create_account(s, 1000))
+    ```
+    </CodeGroup>
+    
+    <Warning>
+    **Critical:** You must replace `postgresql://` with `cockroachdb://` in your connection string for SQLAlchemy to use the CockroachDB dialect.
+    </Warning>
+    
+    ### Best Practices
+    
+    **Use the `run_transaction()` helper function**
+    
+    The `run_transaction()` function handles transaction retries automatically:
+    
+    ```python
+    from sqlalchemy_cockroachdb import run_transaction
+    
+    def transfer_funds(session, from_id, to_id, amount):
+        from_account = session.query(Account).filter_by(id=from_id).one()
+        to_account = session.query(Account).filter_by(id=to_id).one()
+        
+        from_account.balance -= amount
+        to_account.balance += amount
+    
+    run_transaction(SessionMaker, lambda s: transfer_funds(s, id1, id2, 100))
+    ```
+    
+    **Avoid transaction state mutations**
+    
+    Do NOT call these methods inside `run_transaction()`:
+    - `session.commit()` - Handled automatically
+    - `session.rollback()` - Handled automatically  
+    - `session.flush()` - Not supported due to lack of nested transactions
+    
+    **Break up large transactions**
+    
+    If you see "transaction is too large to complete", split your work into smaller chunks:
+    
+    ```python
+    chunk_size = 100
+    for i in range(0, len(records), chunk_size):
+        chunk = records[i:i + chunk_size]
+        run_transaction(SessionMaker, lambda s: insert_chunk(s, chunk))
+    ```
+  </Tab>
+  
+  <Tab title="Django">
+    **Support level:** Full
+    
+    Django 3.1+ is fully supported with the `django-cockroachdb` backend.
+    
+    <CodeGroup>
+    ```bash Installation
+    pip install django==3.1.*
+    pip install psycopg2-binary
+    pip install django-cockroachdb==3.1.*
+    ```
+    
+    ```python settings.py
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django_cockroachdb',
+            'NAME': 'django_db',
+            'USER': 'root',
+            'PASSWORD': '',
+            'HOST': 'localhost',
+            'PORT': '26257',
+        }
+    }
+    ```
+    
+    ```python models.py
+    from django.db import models
+    import uuid
+    
+    class Account(models.Model):
+        id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+        balance = models.IntegerField()
+        created_at = models.DateTimeField(auto_now_add=True)
+    ```
+    </CodeGroup>
+    
+    <Note>
+    The major version of `django-cockroachdb` must match your Django version (e.g., 3.1.x backend for Django 3.1.x).
+    </Note>
+  </Tab>
+</Tabs>
+
+### Go
+
+<Tabs>
+  <Tab title="GORM">
+    **Support level:** Full
+    
+    GORM is Go's feature-rich ORM library.
+    
+    <CodeGroup>
+    ```go Installation
+    go get -u github.com/lib/pq
+    go get -u gorm.io/gorm
+    go get -u gorm.io/driver/postgres
+    ```
+    
+    ```go Model Definition
+    import (
+        "gorm.io/driver/postgres"
+        "gorm.io/gorm"
+    )
+    
+    type Account struct {
+        ID      string `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+        Balance int    `gorm:"not null"`
+    }
+    
+    dsn := os.Getenv("DATABASE_URL")
+    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Auto migrate
+    db.AutoMigrate(&Account{})
+    ```
+    
+    ```go CRUD Operations
+    // Create
+    account := Account{Balance: 1000}
+    db.Create(&account)
+    
+    // Read
+    var accounts []Account
+    db.Where("balance > ?", 500).Find(&accounts)
+    
+    // Update
+    db.Model(&account).Update("Balance", 1500)
+    
+    // Delete
+    db.Delete(&account)
+    ```
+    </CodeGroup>
+  </Tab>
+  
+  <Tab title="upper/db">
+    **Support level:** Full
+    
+    upper/db provides a clean API for database operations.
+    
+    ```go
+    import "github.com/upper/db/v4/adapter/postgresql"
+    
+    sess, err := postgresql.Open(settings)
+    defer sess.Close()
+    
+    accountsCol := sess.Collection("accounts")
+    ```
+  </Tab>
+</Tabs>
+
+### Java
+
+<Tabs>
+  <Tab title="Hibernate">
+    **Support level:** Full
+    
+    Hibernate 5.4.19+ includes native CockroachDB dialect support.
+    
+    <CodeGroup>
+    ```groovy build.gradle
+    implementation 'org.hibernate:hibernate-core:6.2.0.Final'
+    implementation 'org.postgresql:postgresql:42.6.0'
+    ```
+    
+    ```xml hibernate.cfg.xml
+    <?xml version='1.0' encoding='utf-8'?>
+    <hibernate-configuration>
+        <session-factory>
+            <property name="hibernate.dialect">org.hibernate.dialect.CockroachDialect</property>
+            <property name="hibernate.connection.url">jdbc:postgresql://localhost:26257/defaultdb</property>
+            <property name="hibernate.connection.username">root</property>
+        </session-factory>
+    </hibernate-configuration>
+    ```
+    
+    ```java Entity
+    import javax.persistence.*;
+    import java.util.UUID;
+    
+    @Entity
+    @Table(name = "accounts")
+    public class Account {
+        @Id
+        @GeneratedValue
+        private UUID id;
+        
+        @Column(nullable = false)
+        private Integer balance;
+        
+        // Getters and setters
+    }
+    ```
+    </CodeGroup>
+    
+    <Note>
+    Specify the CockroachDB dialect in your Hibernate configuration for optimal compatibility.
+    </Note>
+  </Tab>
+  
+  <Tab title="jOOQ">
+    **Support level:** Full
+    
+    jOOQ provides type-safe SQL queries with code generation.
+    
+    ```java
+    DSLContext create = DSL.using(connection, SQLDialect.POSTGRES);
+    
+    create.insertInto(ACCOUNTS)
+          .columns(ACCOUNTS.ID, ACCOUNTS.BALANCE)
+          .values(UUID.randomUUID(), 1000)
+          .execute();
+    
+    Result<Record> result = create.select()
+        .from(ACCOUNTS)
+        .where(ACCOUNTS.BALANCE.gt(500))
+        .fetch();
+    ```
+  </Tab>
+  
+  <Tab title="Spring Data JPA">
+    **Support level:** Full
+    
+    Spring Data JPA builds on Hibernate and provides repository abstractions.
+    
+    ```java
+    @Entity
+    public class Account {
+        @Id
+        @GeneratedValue
+        private UUID id;
+        private Integer balance;
+    }
+    
+    public interface AccountRepository extends JpaRepository<Account, UUID> {
+        List<Account> findByBalanceGreaterThan(Integer balance);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Ruby
+
+<Tabs>
+  <Tab title="Active Record">
+    **Support level:** Full
+    
+    Active Record is Ruby on Rails' ORM framework.
+    
+    <CodeGroup>
+    ```bash Installation
+    gem install activerecord pg activerecord-cockroachdb-adapter
+    ```
+    
+    ```ruby Configuration
+    require 'active_record'
+    require 'activerecord-cockroachdb-adapter'
+    
+    ActiveRecord::Base.establish_connection(
+      adapter: 'cockroachdb',
+      database: 'bank',
+      host: 'localhost',
+      port: 26257,
+      username: 'root'
+    )
+    ```
+    
+    ```ruby Model
+    class Account < ActiveRecord::Base
+      validates :balance, presence: true, numericality: { greater_than_or_equal_to: 0 }
+    end
+    
+    # Create
+    account = Account.create(balance: 1000)
+    
+    # Read
+    accounts = Account.where('balance > ?', 500)
+    
+    # Update
+    account.update(balance: 1500)
+    
+    # Delete
+    account.destroy
+    ```
+    </CodeGroup>
+    
+    <Note>
+    The `activerecord-cockroachdb-adapter` version must match your Active Record major version.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Common ORM Patterns
+
+### Handling Transactions
+
+Most ORMs provide transaction support. Always use transactions for operations that modify multiple rows:
+
+<Tabs>
+  <Tab title="TypeScript (Prisma)">
+    ```typescript
+    await prisma.$transaction(async (tx) => {
+      await tx.account.update({
+        where: { id: fromId },
+        data: { balance: { decrement: 100 } }
+      })
+      
+      await tx.account.update({
+        where: { id: toId },
+        data: { balance: { increment: 100 } }
+      })
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Python (SQLAlchemy)">
+    ```python
+    from sqlalchemy_cockroachdb import run_transaction
+    
+    def transfer(session, from_id, to_id, amount):
+        from_acct = session.query(Account).get(from_id)
+        to_acct = session.query(Account).get(to_id)
+        from_acct.balance -= amount
+        to_acct.balance += amount
+    
+    run_transaction(SessionMaker, lambda s: transfer(s, id1, id2, 100))
+    ```
+  </Tab>
+  
+  <Tab title="Go (GORM)">
+    ```go
+    db.Transaction(func(tx *gorm.DB) error {
+        if err := tx.Model(&Account{ID: fromID}).Update("balance", gorm.Expr("balance - ?", 100)).Error; err != nil {
+            return err
+        }
+        if err := tx.Model(&Account{ID: toID}).Update("balance", gorm.Expr("balance + ?", 100)).Error; err != nil {
+            return err
+        }
+        return nil
+    })
+    ```
+  </Tab>
+</Tabs>
+
+### Managing Schema Migrations
+
+Use your ORM's migration tools to version control your schema:
+
+<CodeGroup>
+```bash Prisma
+npx prisma migrate dev --name init
+npx prisma migrate deploy
+```
+
+```bash Django
+python manage.py makemigrations
+python manage.py migrate
+```
+
+```bash Rails (Active Record)
+rails generate migration CreateAccounts
+rails db:migrate
+```
+</CodeGroup>
+
+### Connection Pooling
+
+Configure connection pools appropriately for your workload:
+
+<Tabs>
+  <Tab title="Prisma">
+    ```prisma
+    datasource db {
+      provider = "cockroachdb"
+      url      = env("DATABASE_URL")
+    }
+    
+    generator client {
+      provider        = "prisma-client-js"
+      previewFeatures = ["metrics"]
+    }
+    ```
+    
+    ```typescript
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: process.env.DATABASE_URL + '?pool_timeout=0&connection_limit=10'
+        }
+      }
+    })
+    ```
+  </Tab>
+  
+  <Tab title="SQLAlchemy">
+    ```python
+    engine = create_engine(
+        db_uri,
+        pool_size=10,
+        max_overflow=20,
+        pool_pre_ping=True
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## ORM Performance Tips
+
+<CardGroup cols={2}>
+  <Card title="Use Eager Loading" icon="bolt">
+    Avoid N+1 queries by loading related data upfront
+    
+    ```typescript
+    // Good: One query
+    const users = await prisma.user.findMany({
+      include: { posts: true }
+    })
+    
+    // Bad: N+1 queries
+    const users = await prisma.user.findMany()
+    for (const user of users) {
+      const posts = await prisma.post.findMany({
+        where: { userId: user.id }
+      })
+    }
+    ```
+  </Card>
+  
+  <Card title="Batch Operations" icon="layer-group">
+    Use bulk inserts/updates instead of individual operations
+    
+    ```python
+    # Good: Bulk insert
+    session.bulk_insert_mappings(
+        Account,
+        [{"balance": i * 100} for i in range(1000)]
+    )
+    
+    # Bad: Individual inserts
+    for i in range(1000):
+        session.add(Account(balance=i * 100))
+    ```
+  </Card>
+  
+  <Card title="Select Specific Fields" icon="filter">
+    Only query the columns you need
+    
+    ```typescript
+    // Good
+    const accounts = await prisma.account.findMany({
+      select: { id: true, balance: true }
+    })
+    
+    // Wasteful
+    const accounts = await prisma.account.findMany()
+    ```
+  </Card>
+  
+  <Card title="Use Indexes" icon="magnifying-glass">
+    Add indexes for frequently queried fields
+    
+    ```prisma
+    model Account {
+      id      String @id
+      balance Int
+      userId  String
+      
+      @@index([userId])
+      @@index([balance])
+    }
+    ```
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Best Practices" icon="star" href="/developer/best-practices">
+    Learn development best practices for CockroachDB
+  </Card>
+  
+  <Card title="Client Drivers" icon="plug" href="/developer/client-drivers">
+    View all supported client drivers
+  </Card>
+  
+  <Card title="Transaction Handling" icon="rotate">
+    Deep dive into transaction retry logic
+  </Card>
+  
+  <Card title="Performance Optimization" icon="gauge">
+    Optimize your ORM queries for production
+  </Card>
+</CardGroup>

@@ -1,0 +1,609 @@
+---
+title: Development Best Practices
+description: Best practices for building production-ready applications with CockroachDB
+---
+
+Follow these best practices to build high-performance, reliable applications with CockroachDB.
+
+## Transaction Best Practices
+
+### Implement Transaction Retry Logic
+
+CockroachDB may require clients to retry transactions due to contention. All production applications must implement retry logic.
+
+<Warning>
+Applications that do not implement transaction retry logic will fail with "retry write" errors under contention.
+</Warning>
+
+<Tabs>
+  <Tab title="Node.js">
+    ```javascript
+    async function retryTxn(client, operation, maxRetries = 15) {
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          await client.query('BEGIN')
+          const result = await operation(client)
+          await client.query('COMMIT')
+          return result
+        } catch (err) {
+          await client.query('ROLLBACK')
+          
+          // Check for retry error code
+          if (err.code !== '40001') {
+            throw err
+          }
+          
+          // Exponential backoff
+          const sleepMs = Math.pow(2, i) * 100
+          await new Promise(resolve => setTimeout(resolve, sleepMs))
+        }
+      }
+      throw new Error('Transaction max retry limit reached')
+    }
+    
+    // Usage
+    await retryTxn(client, async (txnClient) => {
+      await txnClient.query(
+        'UPDATE accounts SET balance = balance - $1 WHERE id = $2',
+        [100, fromId]
+      )
+      await txnClient.query(
+        'UPDATE accounts SET balance = balance + $1 WHERE id = $2',
+        [100, toId]
+      )
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Python">
+    ```python
+    from sqlalchemy_cockroachdb import run_transaction
+    
+    def transfer_funds(session, from_id, to_id, amount):
+        from_account = session.query(Account).filter_by(id=from_id).one()
+        to_account = session.query(Account).filter_by(id=to_id).one()
+        
+        from_account.balance -= amount
+        to_account.balance += amount
+    
+    # run_transaction handles retries automatically
+    run_transaction(
+        sessionmaker,
+        lambda session: transfer_funds(session, id1, id2, 100)
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Go">
+    ```go
+    import crdbpgx "github.com/cockroachdb/cockroach-go/v2/crdb/crdbpgxv5"
+    
+    err := crdbpgx.ExecuteTx(ctx, conn, pgx.TxOptions{}, func(tx pgx.Tx) error {
+        // Deduct from sender
+        _, err := tx.Exec(ctx,
+            "UPDATE accounts SET balance = balance - $1 WHERE id = $2",
+            amount, fromID)
+        if err != nil {
+            return err
+        }
+        
+        // Add to recipient
+        _, err = tx.Exec(ctx,
+            "UPDATE accounts SET balance = balance + $1 WHERE id = $2",
+            amount, toID)
+        return err
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Java">
+    ```java
+    public static void transferFunds(
+        Connection conn, UUID fromId, UUID toId, BigDecimal amount
+    ) throws SQLException {
+        int maxRetries = 15;
+        
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                conn.setAutoCommit(false);
+                
+                try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE accounts SET balance = balance - ? WHERE id = ?")) {
+                    ps.setBigDecimal(1, amount);
+                    ps.setObject(2, fromId);
+                    ps.executeUpdate();
+                }
+                
+                try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE accounts SET balance = balance + ? WHERE id = ?")) {
+                    ps.setBigDecimal(1, amount);
+                    ps.setObject(2, toId);
+                    ps.executeUpdate();
+                }
+                
+                conn.commit();
+                return;
+            } catch (SQLException e) {
+                conn.rollback();
+                
+                // Check for retry error
+                if (!e.getSQLState().equals("40001")) {
+                    throw e;
+                }
+                
+                // Exponential backoff
+                Thread.sleep((long) Math.pow(2, i) * 100);
+            }
+        }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Keep Transactions Short
+
+Long-running transactions can cause performance issues and increase retry errors.
+
+<CardGroup cols={2}>
+  <Card title="Do" icon="check" color="green">
+    ```python
+    # Good: Short, focused transaction
+    def update_balance(session, account_id, amount):
+        account = session.query(Account).get(account_id)
+        account.balance += amount
+    
+    run_transaction(sessionmaker, 
+        lambda s: update_balance(s, id, 100))
+    ```
+  </Card>
+  
+  <Card title="Don't" icon="xmark" color="red">
+    ```python
+    # Bad: Long transaction with external calls
+    def process_payment(session, account_id, amount):
+        account = session.query(Account).get(account_id)
+        
+        # External API call - DON'T DO THIS
+        response = requests.post('https://api.payment.com/charge')
+        
+        account.balance -= amount
+    ```
+  </Card>
+</CardGroup>
+
+## DML Best Practices
+
+### Use Multi-Row Statements
+
+Multi-row statements are significantly faster than multiple single-row statements.
+
+<CodeGroup>
+```sql Good: Multi-row INSERT
+INSERT INTO accounts (id, balance) VALUES 
+  (gen_random_uuid(), 1000),
+  (gen_random_uuid(), 2000),
+  (gen_random_uuid(), 3000);
+```
+
+```sql Bad: Multiple single-row INSERTs
+INSERT INTO accounts (id, balance) VALUES (gen_random_uuid(), 1000);
+INSERT INTO accounts (id, balance) VALUES (gen_random_uuid(), 2000);
+INSERT INTO accounts (id, balance) VALUES (gen_random_uuid(), 3000);
+```
+</CodeGroup>
+
+### Use UPSERT for Insert-or-Update
+
+On tables with no secondary indexes, `UPSERT` is faster than `INSERT ON CONFLICT`.
+
+<CodeGroup>
+```sql Preferred: UPSERT
+UPSERT INTO accounts (id, balance) 
+VALUES ('123e4567-e89b-12d3-a456-426614174000', 1000);
+```
+
+```sql Slower: INSERT ON CONFLICT
+INSERT INTO accounts (id, balance) 
+VALUES ('123e4567-e89b-12d3-a456-426614174000', 1000)
+ON CONFLICT (id) DO UPDATE SET balance = EXCLUDED.balance;
+```
+</CodeGroup>
+
+### Batch Large Operations
+
+For bulk inserts, use batches of 100-1000 rows. Experiment to find the optimal size.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    BATCH_SIZE = 500
+    
+    for i in range(0, len(records), BATCH_SIZE):
+        batch = records[i:i + BATCH_SIZE]
+        
+        def insert_batch(session):
+            session.bulk_insert_mappings(Account, batch)
+        
+        run_transaction(sessionmaker, insert_batch)
+    ```
+  </Tab>
+  
+  <Tab title="Java (JDBC)">
+    ```java
+    int BATCH_SIZE = 128;  // Use powers of 2 for JDBC
+    
+    connection.setAutoCommit(false);
+    
+    try (PreparedStatement pstmt = connection.prepareStatement(
+        "INSERT INTO accounts (id, balance) VALUES (?, ?)")) {
+        
+        for (int i = 0; i < records.size(); i++) {
+            pstmt.setObject(1, UUID.randomUUID());
+            pstmt.setInt(2, records.get(i).balance);
+            pstmt.addBatch();
+            
+            if ((i + 1) % BATCH_SIZE == 0) {
+                pstmt.executeBatch();
+            }
+        }
+        
+        pstmt.executeBatch();  // Execute remaining
+        connection.commit();
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+For JDBC specifically, use a batch size of 128 (or other powers of 2) for optimal performance.
+</Note>
+
+## Primary Key Best Practices
+
+### Avoid Sequential Primary Keys
+
+Sequential IDs (like `SERIAL`) create hotspots that hurt performance in distributed databases.
+
+<CardGroup cols={2}>
+  <Card title="Recommended" icon="check" color="green">
+    **Use UUID v4 or `gen_random_uuid()`**
+    
+    ```sql
+    CREATE TABLE accounts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      balance INT
+    );
+    ```
+    
+    Spreads data evenly across the cluster.
+  </Card>
+  
+  <Card title="Avoid" icon="xmark" color="red">
+    **Sequential SERIAL**
+    
+    ```sql
+    CREATE TABLE accounts (
+      id SERIAL PRIMARY KEY,
+      balance INT
+    );
+    ```
+    
+    Creates hotspots on a single range.
+  </Card>
+</CardGroup>
+
+### Use Multi-Column Primary Keys
+
+For best performance, design composite primary keys with:
+1. A well-distributed prefix (e.g., user ID)
+2. A monotonically increasing suffix (e.g., timestamp)
+
+```sql
+CREATE TABLE posts (
+  username STRING,
+  post_timestamp TIMESTAMP,
+  post_id UUID,
+  content TEXT,
+  PRIMARY KEY (username, post_timestamp)
+);
+```
+
+This allows efficient queries like:
+
+```sql
+SELECT * FROM posts 
+WHERE username = 'alice' 
+ORDER BY post_timestamp DESC 
+LIMIT 10;
+```
+
+## Connection Management
+
+### Use Connection Pooling
+
+Always use connection pooling in production applications.
+
+<Tabs>
+  <Tab title="Node.js (pg)">
+    ```javascript
+    const { Pool } = require('pg')
+    
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 20,                    // Maximum pool size
+      idleTimeoutMillis: 30000,   // Close idle clients after 30s
+      connectionTimeoutMillis: 2000,
+    })
+    
+    // Use pool instead of individual clients
+    const result = await pool.query('SELECT * FROM accounts')
+    ```
+  </Tab>
+  
+  <Tab title="Python (SQLAlchemy)">
+    ```python
+    from sqlalchemy import create_engine
+    
+    engine = create_engine(
+        db_uri,
+        pool_size=10,           # Base pool size
+        max_overflow=20,        # Allow up to 30 total connections
+        pool_pre_ping=True,     # Verify connections before use
+        pool_recycle=3600       # Recycle connections after 1 hour
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Java (HikariCP)">
+    ```java
+    HikariConfig config = new HikariConfig();
+    config.setJdbcUrl(jdbcUrl);
+    config.setMaximumPoolSize(20);
+    config.setMinimumIdle(5);
+    config.setConnectionTimeout(2000);
+    config.setIdleTimeout(30000);
+    
+    HikariDataSource dataSource = new HikariDataSource(config);
+    ```
+  </Tab>
+</Tabs>
+
+### Set Appropriate Timeouts
+
+```sql
+SET statement_timeout = '30s';
+SET idle_in_transaction_session_timeout = '60s';
+```
+
+## Index Best Practices
+
+### Index WHERE Clause Columns
+
+Create indexes on columns frequently used in WHERE clauses.
+
+```sql
+-- Query pattern
+SELECT * FROM orders WHERE customer_id = $1 AND status = 'pending';
+
+-- Appropriate index
+CREATE INDEX ON orders (customer_id, status);
+```
+
+### Use Covering Indexes
+
+Include frequently selected columns in the index to avoid table lookups.
+
+```sql
+CREATE INDEX orders_by_customer ON orders (customer_id) 
+STORING (order_date, total_amount);
+```
+
+Now this query only reads the index:
+
+```sql
+SELECT order_date, total_amount 
+FROM orders 
+WHERE customer_id = $1;
+```
+
+### Avoid Too Many Indexes
+
+Each index slows down writes. Only create indexes you actually use.
+
+## Schema Design Best Practices
+
+### Use Column Families for Large Rows
+
+Group frequently updated columns separately from large, seldom-updated columns.
+
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  email STRING,
+  name STRING,
+  
+  -- Large, infrequently updated
+  profile_image BYTES,
+  bio TEXT,
+  
+  FAMILY primary (id, email, name),
+  FAMILY large_data (profile_image, bio)
+);
+```
+
+### Choose Appropriate Data Types
+
+<CardGroup cols={2}>
+  <Card title="For IDs" icon="fingerprint">
+    Use `UUID` instead of `SERIAL`
+    
+    ```sql
+    id UUID DEFAULT gen_random_uuid()
+    ```
+  </Card>
+  
+  <Card title="For Money" icon="dollar-sign">
+    Use `DECIMAL` for exact precision
+    
+    ```sql
+    price DECIMAL(10, 2)
+    ```
+  </Card>
+  
+  <Card title="For Timestamps" icon="clock">
+    Use `TIMESTAMPTZ` for time zones
+    
+    ```sql
+    created_at TIMESTAMPTZ DEFAULT now()
+    ```
+  </Card>
+  
+  <Card title="For JSON" icon="code">
+    Use `JSONB` for flexible schemas
+    
+    ```sql
+    metadata JSONB
+    ```
+  </Card>
+</CardGroup>
+
+## Application Architecture Best Practices
+
+### Retry Idempotently
+
+Ensure retried operations are idempotent to avoid duplicate work.
+
+```python
+# Use unique constraint to prevent duplicates
+def create_user_idempotent(session, user_id, email):
+    try:
+        user = User(id=user_id, email=email)
+        session.add(user)
+    except IntegrityError:
+        # User already exists - this is okay for retries
+        session.rollback()
+        user = session.query(User).filter_by(id=user_id).one()
+    return user
+```
+
+### Use IMPORT INTO for Bulk Loads
+
+For large data imports, use `IMPORT INTO` instead of INSERT statements.
+
+```sql
+IMPORT INTO accounts (id, balance)
+CSV DATA ('s3://bucket/accounts.csv')
+WITH delimiter = ',', skip = '1';
+```
+
+This bypasses the SQL layer and writes directly to storage, making it 10-100x faster.
+
+### Monitor and Log Slow Queries
+
+Enable slow query logging to identify performance issues.
+
+```sql
+SET CLUSTER SETTING sql.log.slow_query.latency_threshold = '100ms';
+```
+
+## Language-Specific Best Practices
+
+### Java (JDBC)
+
+<Steps>
+  <Step title="Enable batch rewriting">
+    ```java
+    String url = jdbcUrl + "?reWriteBatchedInserts=true";
+    ```
+    
+    This provides 2-3x performance improvement for batched inserts.
+  </Step>
+  
+  <Step title="Use batch size of 128">
+    PGJDBC performs best with power-of-2 batch sizes.
+    
+    ```java
+    int BATCH_SIZE = 128;
+    ```
+  </Step>
+  
+  <Step title="Use PKCS8 key format">
+    For certificate authentication, convert keys to PKCS8 format:
+    
+    ```bash
+    openssl pkcs8 -topk8 -inform PEM -outform DER \
+      -in client.key -out client.pk8 -nocrypt
+    ```
+  </Step>
+</Steps>
+
+### Python (SQLAlchemy)
+
+- Always use `run_transaction()` from `sqlalchemy-cockroachdb`
+- Replace `postgresql://` with `cockroachdb://` in connection strings
+- Never call `session.commit()`, `session.rollback()`, or `session.flush()` inside `run_transaction()`
+
+### Node.js
+
+- Use the `pg` driver's native connection pooling
+- Implement exponential backoff for transaction retries
+- Set `statement_timeout` for long-running queries
+
+## Testing Best Practices
+
+### Test Transaction Retries
+
+Simulate contention to ensure your retry logic works:
+
+```sql
+-- Force retry errors for testing
+SET CLUSTER SETTING sql.defaults.inject_retry_errors_enabled = true;
+SET inject_retry_errors_enabled = true;
+```
+
+### Use Separate Test Database
+
+Create isolated test databases for integration tests:
+
+```sql
+CREATE DATABASE test_db;
+USE test_db;
+```
+
+## Summary
+
+<CardGroup cols={2}>
+  <Card title="Always Implement" icon="check" color="green">
+    - Transaction retry logic with exponential backoff
+    - Connection pooling
+    - UUID primary keys (not SERIAL)
+    - Multi-row DML statements
+  </Card>
+  
+  <Card title="Never Do" icon="xmark" color="red">
+    - Long-running transactions
+    - Sequential primary keys in high-write tables
+    - Missing indexes on WHERE clauses
+    - Ignoring retry errors
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Client Drivers" icon="plug" href="/developer/client-drivers">
+    Install drivers for your programming language
+  </Card>
+  
+  <Card title="ORM Support" icon="database" href="/developer/orms">
+    Learn about ORM frameworks
+  </Card>
+  
+  <Card title="Performance Tuning" icon="gauge">
+    Advanced performance optimization techniques
+  </Card>
+  
+  <Card title="Example Applications" icon="code">
+    View complete example apps in your language
+  </Card>
+</CardGroup>

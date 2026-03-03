@@ -1,0 +1,582 @@
+---
+title: Network Security in CockroachDB Cloud
+description: Learn how to secure network access to your CockroachDB Cloud clusters with IP allowlisting and private connectivity.
+---
+
+CockroachDB Cloud provides multiple layers of network security to protect your clusters from unauthorized access and malicious activity.
+
+## Network Security Overview
+
+Protect your clusters with:
+
+1. **IP Allowlisting**: Restrict access to specific IP address ranges
+2. **Private Connectivity**: Connect via cloud provider private networks
+3. **TLS Encryption**: Encrypt all data in transit
+4. **Network Isolation**: Clusters run in isolated networks
+
+## IP Allowlisting
+
+Control which IP addresses can connect to your cluster.
+
+### How IP Allowlisting Works
+
+By default:
+- **Basic clusters**: Open to all traffic (0.0.0.0/0)
+- **Standard/Advanced clusters**: Locked down, no access until authorized
+
+You must explicitly authorize IP addresses or ranges to allow connections.
+
+### Add IP Allowlist Entry
+
+<Steps>
+  <Step title="Navigate to Networking">
+    1. Select your cluster
+    2. Click **Networking** in the left navigation
+    3. Go to **IP Allowlist** tab
+  </Step>
+  
+  <Step title="Add Network">
+    Click **Add Network** and choose:
+    
+    **Current Network:**
+    - Automatically detects your current public IP
+    - Quick setup for immediate access
+    
+    **Custom Network:**
+    - Enter IP address or CIDR range
+    - Example: `203.0.113.0/24`
+  </Step>
+  
+  <Step title="Configure Access">
+    1. Give the entry a descriptive name
+    2. Select access level:
+       - **CockroachDB Client**: SQL connections
+       - **DB Console**: UI access (Advanced only)
+    3. Click **Apply**
+  </Step>
+</Steps>
+
+### IP Allowlist Limits
+
+| Cluster Type | Maximum Rules |
+|--------------|---------------|
+| Basic | 50 |
+| Standard | 50 |
+| Advanced (AWS) | 20 |
+| Advanced (GCP) | 200 |
+| Advanced (Azure) | 200 |
+
+<Info>
+Need more allowlist rules? [Contact Support](https://support.cockroachlabs.com) to increase your limit.
+</Info>
+
+### CIDR Notation
+
+Use CIDR notation to specify IP ranges:
+
+**Examples:**
+- Single IP: `203.0.113.5/32`
+- Subnet (256 IPs): `203.0.113.0/24`
+- Larger network: `203.0.0.0/16`
+
+**Common CIDR Ranges:**
+
+| CIDR | Number of IPs | Use Case |
+|------|---------------|----------|
+| /32 | 1 | Single machine |
+| /28 | 16 | Small office |
+| /24 | 256 | Office network |
+| /16 | 65,536 | Large organization |
+| /0 | All IPs | Development only |
+
+<Warning>
+**Production Security:**
+- Never use `0.0.0.0/0` in production
+- Use the smallest CIDR range that works
+- Document all allowlist entries
+- Review and update regularly
+</Warning>
+
+### Modify Allowlist Entry
+
+<Steps>
+  <Step title="Find Entry">
+    Navigate to **Networking** > **IP Allowlist**
+  </Step>
+  
+  <Step title="Edit">
+    1. Click action menu (•••) for the entry
+    2. Select **Edit**
+    3. Modify IP range or access type
+    4. Click **Save**
+  </Step>
+</Steps>
+
+### Delete Allowlist Entry
+
+<Steps>
+  <Step title="Select Entry">
+    Go to **Networking** > **IP Allowlist**
+  </Step>
+  
+  <Step title="Delete">
+    1. Click action menu (•••)
+    2. Select **Delete**
+    3. Confirm deletion
+  </Step>
+</Steps>
+
+<Info>
+Changes to IP allowlists take effect within a few seconds.
+</Info>
+
+## Private Connectivity
+
+Connect to clusters without exposing them to the public internet.
+
+### Benefits of Private Connectivity
+
+- **Enhanced Security**: No public internet exposure
+- **Reduced Latency**: Traffic stays on cloud provider network
+- **Compliance**: Meet regulatory requirements
+- **Cost Savings**: Potential reduction in data transfer costs
+
+### Available Options
+
+<Tabs>
+  <Tab title="AWS PrivateLink">
+    **AWS PrivateLink**
+    
+    Available for Standard and Advanced clusters on AWS.
+    
+    <Steps>
+      <Step title="Get Service Name">
+        1. Navigate to **Networking** > **Private endpoint**
+        2. Click **Add a private endpoint**
+        3. Copy the Service Name
+      </Step>
+      
+      <Step title="Create VPC Endpoint">
+        In AWS Console:
+        1. Go to VPC > Endpoints
+        2. Click **Create Endpoint**
+        3. Select **Other endpoint services**
+        4. Enter the Service Name
+        5. Select your VPC and subnets
+        6. Choose security groups
+        7. Create endpoint and copy Endpoint ID
+      </Step>
+      
+      <Step title="Validate in Cloud Console">
+        1. Return to CockroachDB Cloud Console
+        2. Click **Validate**
+        3. Enter Endpoint ID
+        4. Click **Validate**
+        5. Connection status shows **Available** when ready
+      </Step>
+    </Steps>
+    
+    **Pricing**: AWS charges for PrivateLink endpoints (~$0.01/hour + data transfer)
+  </Tab>
+  
+  <Tab title="GCP Private Service Connect">
+    **GCP Private Service Connect (PSC)**
+    
+    Available for Standard and Advanced clusters on GCP.
+    
+    <Steps>
+      <Step title="Get Target Service">
+        1. Go to **Networking** > **Private endpoint**
+        2. Click **Add a private endpoint**
+        3. Copy the Target Service ID
+      </Step>
+      
+      <Step title="Create PSC Endpoint">
+        In Google Cloud Console:
+        1. Navigate to **Private Service Connect**
+        2. Click **Connect Endpoint**
+        3. Set **Target** to **Published service**
+        4. Paste the Target Service ID
+        5. Select your VPC network
+        6. Assign an IP address (or use automatic)
+        7. Enable global access for multi-region
+        8. Create endpoint
+      </Step>
+      
+      <Step title="Complete Setup">
+        1. Return to CockroachDB Cloud Console
+        2. Click **Validate**
+        3. Connection is automatically accepted
+        4. Status shows **Available**
+      </Step>
+    </Steps>
+    
+    **Pricing**: GCP charges for PSC endpoints (varies by region)
+  </Tab>
+  
+  <Tab title="GCP VPC Peering">
+    **GCP VPC Peering (Legacy)**
+    
+    Available for Advanced clusters on GCP. PSC is recommended for new deployments.
+    
+    <Info>
+    VPC Peering must be configured during cluster creation. Contact Support to enable VPC Peering for existing clusters.
+    </Info>
+    
+    **Requirements:**
+    - Cluster IP range must not overlap with your VPC
+    - Default IP range: `172.28.0.0/14`
+    - Custom IP ranges available during cluster creation
+    
+    **For GKE:**
+    - Use VPC-native clusters with alias IP addresses
+    - Or export custom routes for routes-based clusters
+  </Tab>
+  
+  <Tab title="Azure Private Link">
+    **Azure Private Link**
+    
+    Available for Advanced clusters on Azure.
+    
+    <Steps>
+      <Step title="Get Alias">
+        1. Navigate to **Networking** > **Private endpoint**
+        2. Click **Add a private endpoint**
+        3. Copy the Alias
+      </Step>
+      
+      <Step title="Create Private Endpoint">
+        In Azure Portal:
+        1. Create new Private Endpoint
+        2. Set connection method to **Resource ID or alias**
+        3. Enter the Alias
+        4. Configure virtual network and subnet
+        5. Create endpoint
+        6. Copy the endpoint's Resource ID
+      </Step>
+      
+      <Step title="Validate Connection">
+        1. Return to Cloud Console
+        2. Click **Next**
+        3. Paste endpoint Resource ID
+        4. Click **Validate**
+      </Step>
+      
+      <Step title="Configure Private DNS">
+        In Azure:
+        1. Create Private DNS Zone with Internal DNS Name
+        2. Create `@` record
+        3. Link DNS zone to VPC
+        4. Enable auto-registration
+      </Step>
+      
+      <Step title="Complete">
+        Return to Cloud Console and click **Complete**
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+### Connect via Private Endpoint
+
+Once configured, get private connection string:
+
+<Steps>
+  <Step title="Open Connect Dialog">
+    Click **Connect** on your cluster's page
+  </Step>
+  
+  <Step title="Select Private Connection">
+    1. Under **Select network**, choose your private endpoint
+    2. Copy the private connection string
+    3. Use in your applications
+  </Step>
+</Steps>
+
+**Private Connection String Example:**
+```
+postgresql://user@cluster-name-private.crdb.io:26257/defaultdb?sslmode=verify-full
+```
+
+### Private Connectivity Best Practices
+
+<Card title="Recommendations" icon="shield">
+  - **DNS**: Use private DNS for name resolution
+  - **Security Groups**: Restrict endpoint access
+  - **Monitoring**: Track private endpoint usage
+  - **Documentation**: Document endpoint configuration
+  - **Testing**: Verify private connectivity before production
+</Card>
+
+## TLS/SSL Encryption
+
+All connections to CockroachDB Cloud are encrypted.
+
+### TLS Configuration
+
+**Required Settings:**
+- TLS 1.2 or higher
+- `sslmode=verify-full` (production)
+- Valid CA certificate
+
+**Download CA Certificate:**
+
+```bash
+mkdir -p ~/.postgresql
+curl --create-dirs -o ~/.postgresql/root.crt \
+  'https://cockroachlabs.cloud/clusters/{cluster-id}/cert'
+```
+
+### SSL Modes
+
+| Mode | Encryption | Verification | Production Use |
+|------|------------|--------------|----------------|
+| `disable` | No | No | Never |
+| `require` | Yes | No | Testing only |
+| `verify-ca` | Yes | Partial | Not recommended |
+| `verify-full` | Yes | Yes | **Required** |
+
+<Warning>
+**Always use `verify-full`** in production to:
+- Encrypt all data in transit
+- Verify server identity
+- Prevent man-in-the-middle attacks
+- Meet compliance requirements
+</Warning>
+
+## Network Isolation
+
+Clusters run in isolated network environments.
+
+### Cluster Network Architecture
+
+**Basic/Standard:**
+- Clusters run in Cockroach Labs-managed VPCs
+- Network isolation between customers
+- No direct VPC peering
+
+**Advanced:**
+- Dedicated VPC per cluster (option)
+- Customizable IP ranges
+- Private connectivity available
+- Network security group controls
+
+### Egress Control
+
+For Advanced clusters, control outbound traffic:
+
+**Egress Perimeter Controls:**
+- Restrict outbound connections
+- Allowlist external endpoints
+- Control changefeed destinations
+- Secure backup destinations
+
+**Configure Egress Rules:**
+
+<Steps>
+  <Step title="Access Egress Settings">
+    Go to **Networking** > **Egress Rules**
+  </Step>
+  
+  <Step title="Add Rule">
+    1. Click **Add Egress Rule**
+    2. Enter destination CIDR or hostname
+    3. Specify port (optional)
+    4. Add description
+    5. Click **Save**
+  </Step>
+</Steps>
+
+## DB Console Access
+
+Secure access to the DB Console (Advanced clusters only).
+
+### Authorize DB Console Access
+
+<Steps>
+  <Step title="Add IP to Allowlist">
+    1. Go to **Networking** > **IP Allowlist**
+    2. Click **Add Network**
+    3. Select **Current Network**
+    4. Check **DB Console to monitor the cluster**
+    5. Click **Apply**
+  </Step>
+  
+  <Step title="Access DB Console">
+    1. Navigate to **Tools** page
+    2. Click **Open DB Console**
+    3. Authenticate with SQL credentials
+  </Step>
+</Steps>
+
+<Warning>
+**Best Practice**: Remove DB Console allowlist entries after use to minimize attack surface.
+</Warning>
+
+## Security Monitoring
+
+Monitor network security events and access.
+
+### Audit Logs
+
+Track network access attempts:
+
+- **Organization Audit Logs**: Track Console access
+- **SQL Audit Logs**: Track database connections
+- **Connection Logs**: Monitor successful/failed connections
+
+**View Audit Logs:**
+
+<Steps>
+  <Step title="Access Audit Logs">
+    Go to **Organization Settings** > **Audit Log**
+  </Step>
+  
+  <Step title="Filter Events">
+    Filter by:
+    - Event type
+    - User
+    - Time range
+    - Resource
+  </Step>
+  
+  <Step title="Export Logs">
+    Download audit logs for external analysis
+  </Step>
+</Steps>
+
+### Connection Monitoring
+
+Track active connections:
+
+```sql
+-- View active connections
+SELECT * FROM crdb_internal.cluster_sessions;
+
+-- View connection attempts
+SELECT * FROM crdb_internal.cluster_queries;
+
+-- Monitor by application
+SELECT application_name, count(*) 
+FROM crdb_internal.cluster_sessions 
+GROUP BY application_name;
+```
+
+## Compliance and Certifications
+
+CockroachDB Cloud meets security compliance standards:
+
+- **SOC 2 Type 2**: All plans
+- **PCI DSS**: Advanced with security add-on
+- **HIPAA**: Advanced with security add-on
+- **ISO 27001/27017**: All plans
+
+See [Compliance](/cloud/compliance) for details.
+
+## Security Best Practices
+
+### Network Security Checklist
+
+<Steps>
+  <Step title="IP Allowlisting">
+    - [ ] Remove 0.0.0.0/0 from production
+    - [ ] Use smallest necessary CIDR ranges
+    - [ ] Document all allowlist entries
+    - [ ] Review allowlist quarterly
+  </Step>
+  
+  <Step title="Private Connectivity">
+    - [ ] Use private endpoints for production
+    - [ ] Configure private DNS
+    - [ ] Restrict endpoint security groups
+    - [ ] Monitor private endpoint usage
+  </Step>
+  
+  <Step title="Encryption">
+    - [ ] Always use sslmode=verify-full
+    - [ ] Keep CA certificates updated
+    - [ ] Use TLS 1.2 or higher
+    - [ ] Verify certificate validity
+  </Step>
+  
+  <Step title="Access Control">
+    - [ ] Implement least privilege
+    - [ ] Use separate credentials per application
+    - [ ] Rotate passwords regularly
+    - [ ] Monitor connection logs
+  </Step>
+  
+  <Step title="Monitoring">
+    - [ ] Enable audit logging
+    - [ ] Set up connection alerts
+    - [ ] Review logs regularly
+    - [ ] Track failed auth attempts
+  </Step>
+</Steps>
+
+### Defense in Depth
+
+Implement multiple security layers:
+
+1. **Network Layer**: IP allowlists + private connectivity
+2. **Transport Layer**: TLS encryption
+3. **Authentication**: Strong passwords + MFA
+4. **Authorization**: Role-based access control
+5. **Application Layer**: Prepared statements + parameterized queries
+6. **Monitoring**: Audit logs + alerts
+
+## Troubleshooting
+
+### Connection Blocked
+
+**Issue**: Cannot connect to cluster
+
+**Solutions**:
+1. Verify IP is in allowlist
+2. Check CIDR range is correct
+3. Confirm network type selected (SQL/DB Console)
+4. Wait a few seconds for changes to propagate
+5. Check firewall rules on client side
+
+### Private Endpoint Not Working
+
+**Issue**: Cannot connect via private endpoint
+
+**Solutions**:
+1. Verify endpoint status is "Available"
+2. Check VPC endpoint configuration
+3. Verify security group rules
+4. Test DNS resolution
+5. Check route tables
+6. Contact Support if issue persists
+
+### Certificate Errors
+
+**Issue**: SSL/TLS certificate verification fails
+
+**Solutions**:
+1. Download latest CA certificate
+2. Verify certificate path is correct
+3. Check sslmode setting
+4. Ensure certificate hasn't expired
+5. Verify hostname matches certificate
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/cloud/authentication">
+    Configure authentication methods
+  </Card>
+  
+  <Card title="Authorization" icon="user-shield" href="/cloud/authorization">
+    Manage roles and permissions
+  </Card>
+  
+  <Card title="Compliance" icon="certificate" href="/cloud/compliance">
+    Security compliance and certifications
+  </Card>
+  
+  <Card title="Connect to Cluster" icon="plug" href="/cloud/connect-to-cluster">
+    Connect applications securely
+  </Card>
+</CardGroup>

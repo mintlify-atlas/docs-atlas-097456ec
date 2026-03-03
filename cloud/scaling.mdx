@@ -1,0 +1,420 @@
+---
+title: Scaling CockroachDB Cloud Clusters
+description: Learn how to scale your CockroachDB Cloud clusters to meet performance and capacity requirements.
+---
+
+This page explains how to scale CockroachDB Cloud clusters to handle increased workloads, optimize performance, and manage costs effectively.
+
+## Scaling Overview
+
+Scaling strategies differ based on your cluster plan:
+
+- **Basic**: Automatic scaling based on usage
+- **Standard**: Manual capacity provisioning
+- **Advanced**: Independent node and storage scaling
+
+## Basic Cluster Scaling
+
+Basic clusters automatically scale based on your workload:
+
+**Automatic Scaling Features:**
+- Compute scales with Request Units consumed
+- Storage automatically provisioned as data grows
+- No manual intervention required
+- Pay only for resources used
+
+**Set Spending Limits:**
+
+<Steps>
+  <Step title="Navigate to Cluster Settings">
+    Go to your cluster's **Overview** page
+  </Step>
+  
+  <Step title="Configure Spend Limit">
+    1. Find **Spend limit** setting
+    2. Click **Edit**
+    3. Set maximum monthly spend (optional)
+    4. Click **Save**
+  </Step>
+</Steps>
+
+<Info>
+Basic clusters are billed based on Request Units (RUs). Set spend limits to control costs while allowing automatic scaling.
+</Info>
+
+## Standard Cluster Scaling
+
+Standard clusters use provisioned compute capacity with usage-based storage.
+
+### Scale Compute Capacity
+
+<Steps>
+  <Step title="Access Capacity Settings">
+    1. Navigate to cluster's **Overview** page
+    2. Click **Update capacity** in the Capacity section
+  </Step>
+  
+  <Step title="Adjust vCPUs">
+    Use the slider or input field to set provisioned vCPUs:
+    
+    **Guidelines:**
+    - **Minimum**: 4 vCPUs for production
+    - **Recommended**: 40% headroom above peak
+    - **Maximum**: Contact support for >128 vCPUs
+    
+    Example capacity for different workloads:
+    - **Small**: 4-8 vCPUs (dev/test)
+    - **Medium**: 16-32 vCPUs (production)
+    - **Large**: 64+ vCPUs (high-traffic applications)
+  </Step>
+  
+  <Step title="Review and Apply">
+    1. Review updated hourly cost estimate
+    2. Click **Update cluster**
+    3. Changes take effect immediately
+  </Step>
+</Steps>
+
+<Warning>
+**Scaling Down Limits**: You can decrease provisioned capacity only 3 times within a 7-day period. Plan capacity changes carefully.
+</Warning>
+
+### Monitor Resource Usage
+
+Track resource utilization to determine when to scale:
+
+**Key Metrics to Monitor:**
+- **CPU Usage**: Scale up if consistently >70%
+- **RU Consumption**: Track against provisioned capacity
+- **SQL Statement Latency**: Increase with resource constraints
+- **Connection Count**: High connection counts may need more capacity
+
+**Viewing Metrics:**
+
+<Steps>
+  <Step title="Access Metrics">
+    Click **Metrics** in cluster navigation
+  </Step>
+  
+  <Step title="Review Performance">
+    Check the following dashboards:
+    - **Overview**: CPU, RUs, and SQL statements
+    - **Request Units**: Detailed RU breakdown
+    - **SQL**: Query performance and latency
+  </Step>
+  
+  <Step title="Identify Trends">
+    Look for patterns indicating need to scale:
+    - Sustained high CPU usage
+    - Increasing query latency
+    - RU throttling events
+  </Step>
+</Steps>
+
+### Storage Scaling
+
+Storage automatically scales with data growth:
+
+- **Automatic provisioning**: Added as needed
+- **Usage-based billing**: Pay for storage used
+- **Per-region pricing**: Rates vary by cloud provider and region
+- **Three replicas included**: No extra charge for standard replication
+
+## Advanced Cluster Scaling
+
+Advanced clusters offer independent scaling of nodes and storage.
+
+### Add or Remove Nodes
+
+<Steps>
+  <Step title="Navigate to Cluster">
+    Go to cluster's **Overview** page
+  </Step>
+  
+  <Step title="Modify Nodes">
+    Click **Add nodes** or select nodes to remove
+    
+    **Adding Nodes:**
+    1. Select region(s)
+    2. Specify number of nodes per region
+    3. Review cost impact
+    4. Click **Add nodes**
+    
+    **Removing Nodes:**
+    1. Select nodes to remove
+    2. Ensure sufficient nodes remain (minimum 3)
+    3. Confirm removal
+  </Step>
+  
+  <Step title="Monitor Rebalancing">
+    CockroachDB automatically rebalances data across nodes. Monitor progress in **Metrics** > **Overview**.
+  </Step>
+</Steps>
+
+**Node Scaling Guidelines:**
+
+| Cluster Size | Use Case |
+|--------------|----------|
+| 3 nodes | Development, testing |
+| 5-9 nodes | Production, single region |
+| 9+ nodes | Production, multi-region |
+| 15+ nodes | High-traffic, global applications |
+
+### Increase Storage per Node
+
+<Steps>
+  <Step title="Access Storage Settings">
+    1. Go to cluster's **Overview** page
+    2. Click pencil icon next to **Storage**
+  </Step>
+  
+  <Step title="Set New Storage">
+    1. Enter new storage amount per node
+    2. Minimum increase: 10 GiB
+    3. Review cost estimate
+  </Step>
+  
+  <Step title="Apply Changes">
+    Click **Update cluster** to increase storage
+  </Step>
+</Steps>
+
+<Warning>
+**Storage is non-decreasing**: You cannot reduce storage per node after increasing it. Plan capacity carefully.
+</Warning>
+
+### Change Node Size
+
+You cannot directly change node size (vCPUs/RAM) for existing clusters. To resize nodes:
+
+<Steps>
+  <Step title="Create New Cluster">
+    Create a new cluster with desired node size
+  </Step>
+  
+  <Step title="Migrate Data">
+    Use backup/restore or `EXPORT`/`IMPORT` to move data
+  </Step>
+  
+  <Step title="Update Applications">
+    Update connection strings to point to new cluster
+  </Step>
+  
+  <Step title="Decommission Old Cluster">
+    Delete the old cluster when migration is complete
+  </Step>
+</Steps>
+
+## Scaling Best Practices
+
+### Plan for Growth
+
+<Card title="Capacity Planning" icon="chart-line">
+  - Monitor current usage trends
+  - Project growth over 6-12 months
+  - Allow 40% headroom for traffic spikes
+  - Test at expected peak load
+</Card>
+
+### Optimize Before Scaling
+
+Before adding capacity, optimize your workload:
+
+**Query Optimization:**
+- Review slow queries in SQL Activity
+- Add appropriate indexes
+- Use `EXPLAIN` to analyze query plans
+- Implement caching where appropriate
+
+**Schema Optimization:**
+- Review table designs
+- Partition large tables
+- Use appropriate data types
+- Implement TTL for old data
+
+**Connection Management:**
+- Use connection pooling
+- Limit maximum connections
+- Close idle connections
+- Monitor connection counts
+
+### Multi-Region Scaling
+
+For multi-region clusters:
+
+**Balanced Topology:**
+- Keep node counts equal across regions
+- Distribute primary replicas evenly
+- Use regional tables for locality
+
+**Network Optimization:**
+- Place clusters close to users
+- Use follower reads for read-heavy workloads
+- Configure table localities appropriately
+
+### Cost Optimization
+
+**Right-size Your Cluster:**
+- Don't over-provision capacity
+- Monitor actual usage vs. provisioned
+- Scale down during off-peak periods (where allowed)
+- Use Basic tier for dev/test environments
+
+**Storage Management:**
+- Implement data retention policies
+- Use TTL to expire old data
+- Archive historical data
+- Compress large text/binary columns
+
+## Scaling for Specific Workloads
+
+### OLTP Workloads
+
+**Characteristics:**
+- High transaction rates
+- Low latency requirements
+- Many concurrent connections
+
+**Scaling Strategy:**
+- Provision sufficient CPU capacity
+- Use connection pooling
+- Add nodes for increased throughput
+- Optimize frequently-run queries
+
+### Analytical Workloads
+
+**Characteristics:**
+- Complex queries
+- Large data scans
+- Batch processing
+
+**Scaling Strategy:**
+- Increase storage capacity
+- Add nodes for parallel processing
+- Use changefeeds to offload analytics
+- Consider separate read replicas
+
+### Mixed Workloads
+
+**Characteristics:**
+- Both transactional and analytical queries
+- Variable traffic patterns
+- Multiple applications
+
+**Scaling Strategy:**
+- Balanced node and storage scaling
+- Separate clusters for different workloads
+- Use workload isolation techniques
+- Monitor and adjust based on usage patterns
+
+## Monitoring Scaling Operations
+
+Track scaling operations and their impact:
+
+### During Scaling
+
+- **Cluster Status**: Check Overview page for operation progress
+- **Performance**: Monitor query latency during scaling
+- **Rebalancing**: Watch data distribution in Metrics
+- **Alerts**: Review any alerts triggered
+
+### After Scaling
+
+<Steps>
+  <Step title="Verify Capacity">
+    Confirm new capacity is reflected in cluster settings
+  </Step>
+  
+  <Step title="Check Performance">
+    Review metrics to ensure improved performance:
+    - CPU utilization decreased
+    - Query latency improved
+    - Throughput increased
+  </Step>
+  
+  <Step title="Monitor Costs">
+    Track billing to verify expected cost changes
+  </Step>
+</Steps>
+
+## Troubleshooting Scaling Issues
+
+### Scaling Operation Stuck
+
+**Symptoms**: Scaling operation doesn't complete
+
+**Solutions**:
+1. Check cluster status for error messages
+2. Verify no ongoing maintenance operations
+3. Contact Support if operation is stuck >30 minutes
+
+### Performance Not Improved
+
+**Symptoms**: Scaling up didn't improve performance
+
+**Possible Causes**:
+- Bottleneck is elsewhere (queries, indexes)
+- Data not rebalanced yet
+- Application connection pool not increased
+
+**Solutions**:
+1. Review query performance in SQL Activity
+2. Wait for rebalancing to complete
+3. Check application connection pool settings
+4. Analyze with Insights for recommendations
+
+### Scaling Down Blocked
+
+**Symptoms**: Cannot decrease capacity
+
+**Causes**:
+- Already scaled down 3 times in 7 days (Standard)
+- Capacity decrease would cause issues
+
+**Solutions**:
+- Wait for 7-day period to reset
+- Contact Support for assistance
+- Consider other optimization approaches
+
+## Scaling Automation
+
+Use the Cloud API to automate scaling:
+
+```bash
+# Example: Scale Standard cluster capacity
+curl -X PATCH \
+  https://cockroachlabs.cloud/api/v1/clusters/{cluster_id} \
+  -H "Authorization: Bearer {api_key}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dedicated": {
+      "capacity": 16
+    }
+  }'
+```
+
+**Automation Use Cases:**
+- Schedule capacity changes
+- Respond to CloudWatch/Datadog alerts
+- Implement auto-scaling policies
+- Integrate with CI/CD pipelines
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Performance Tuning" icon="gauge-high" href="https://www.cockroachlabs.com/docs/stable/performance-best-practices-overview">
+    Optimize query performance
+  </Card>
+  
+  <Card title="Monitoring" icon="chart-line" href="/cloud/monitoring">
+    Set up comprehensive monitoring
+  </Card>
+  
+  <Card title="Resource Usage" icon="chart-bar" href="https://www.cockroachlabs.com/docs/cockroachcloud/resource-usage">
+    Understand resource consumption
+  </Card>
+  
+  <Card title="Pricing" icon="dollar-sign" href="/cloud/pricing">
+    Understand cost implications
+  </Card>
+</CardGroup>

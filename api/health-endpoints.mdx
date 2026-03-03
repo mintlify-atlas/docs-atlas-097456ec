@@ -1,0 +1,461 @@
+---
+title: Health Check Endpoints
+description: Monitor node health and readiness for SQL connections
+---
+
+The health check endpoints allow you to verify that a CockroachDB node is running and ready to accept SQL connections. These endpoints are essential for load balancers, orchestration systems, and monitoring tools.
+
+## Health Check
+
+Determine if a node is running and ready to accept SQL connections.
+
+```bash GET /api/v2/health
+curl --request GET \
+  --url https://localhost:8080/api/v2/health/
+```
+
+**Stability:** Stable
+
+<Note>
+This endpoint does **not** require authentication.
+</Note>
+
+### Response Codes
+
+<ResponseField name="200 OK" type="status">
+  The node is healthy and ready to accept SQL connections.
+  
+  ```json
+  {
+    "status": "ok"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="503 Service Unavailable" type="status">
+  The node is not ready to accept SQL connections. This may occur during:
+  - Node startup
+  - Cluster initialization
+  - Node draining or decommissioning
+  - Critical internal errors
+  
+  ```json
+  {
+    "status": "unavailable",
+    "message": "node is not ready"
+  }
+  ```
+</ResponseField>
+
+### When to Use
+
+Use the health endpoint for:
+
+<AccordionGroup>
+  <Accordion title="Load Balancer Health Checks">
+    Configure your load balancer to poll `/api/v2/health` to route traffic only to healthy nodes.
+    
+    **HAProxy Example:**
+    ```haproxy
+    backend cockroachdb
+        option httpchk GET /api/v2/health
+        http-check expect status 200
+        server node1 10.0.1.1:8080 check port 8080
+        server node2 10.0.1.2:8080 check port 8080
+        server node3 10.0.1.3:8080 check port 8080
+    ```
+    
+    **NGINX Example:**
+    ```nginx
+    upstream cockroachdb {
+        server 10.0.1.1:26257;
+        server 10.0.1.2:26257;
+        server 10.0.1.3:26257;
+    }
+    
+    server {
+        location /health {
+            proxy_pass http://10.0.1.1:8080/api/v2/health;
+            proxy_method GET;
+        }
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Kubernetes Liveness Probes">
+    Use health checks to automatically restart unhealthy pods.
+    
+    ```yaml
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: cockroachdb
+    spec:
+      containers:
+      - name: cockroachdb
+        image: cockroachdb/cockroach:v25.3.0
+        livenessProbe:
+          httpGet:
+            path: /api/v2/health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+    ```
+  </Accordion>
+  
+  <Accordion title="Kubernetes Readiness Probes">
+    Prevent traffic from being sent to nodes that aren't ready.
+    
+    ```yaml
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: cockroachdb
+    spec:
+      containers:
+      - name: cockroachdb
+        image: cockroachdb/cockroach:v25.3.0
+        readinessProbe:
+          httpGet:
+            path: /api/v2/health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 2
+    ```
+  </Accordion>
+  
+  <Accordion title="Monitoring and Alerting">
+    Poll health status to detect node failures and trigger alerts.
+    
+    ```bash Simple Health Monitor
+    #!/bin/bash
+    
+    NODES=("node1:8080" "node2:8080" "node3:8080")
+    
+    for NODE in "${NODES[@]}"; do
+      STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://$NODE/api/v2/health/")
+      
+      if [ "$STATUS" -eq 200 ]; then
+        echo "✓ $NODE is healthy"
+      else
+        echo "✗ $NODE is unhealthy (status: $STATUS)"
+        # Send alert
+        curl -X POST https://alerts.example.com/webhook \
+          -d "{\"node\": \"$NODE\", \"status\": \"unhealthy\"}"
+      fi
+    done
+    ```
+  </Accordion>
+  
+  <Accordion title="Graceful Shutdown Verification">
+    Check health during node draining to ensure graceful shutdown.
+    
+    ```bash
+    # Start draining the node
+    cockroach node drain 1 --certs-dir=certs --host=node1:26257
+    
+    # Monitor health status
+    while true; do
+      STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://node1:8080/api/v2/health/)
+      if [ "$STATUS" -eq 503 ]; then
+        echo "Node has been drained successfully"
+        break
+      fi
+      echo "Waiting for node to drain..."
+      sleep 5
+    done
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Health Check vs. Other Monitoring
+
+The health endpoint differs from other monitoring approaches:
+
+| Method | Purpose | Authentication | Use Case |
+|--------|---------|----------------|----------|
+| `/api/v2/health` | SQL readiness check | None | Load balancers, orchestration |
+| `/api/v2/nodes` | Detailed node info | Required | Monitoring dashboards |
+| `_status/vars` | Prometheus metrics | None | Time-series monitoring |
+| DB Console | Visual monitoring | Browser-based | Human operators |
+
+## Best Practices
+
+<Steps>
+  <Step title="Set Appropriate Timeouts">
+    Configure health check timeouts based on your environment:
+    
+    - **Development**: 3-5 seconds
+    - **Production**: 5-10 seconds
+    - **High-latency networks**: 10-15 seconds
+    
+    Too short: False positives from network latency
+    
+    Too long: Slow detection of actual failures
+  </Step>
+  
+  <Step title="Use Retry Logic">
+    Implement retries before marking a node as unhealthy:
+    
+    ```python
+    import requests
+    from time import sleep
+    
+    def check_health(node_url, max_retries=3):
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(
+                    f"{node_url}/api/v2/health",
+                    timeout=5
+                )
+                if response.status_code == 200:
+                    return True
+            except requests.exceptions.RequestException:
+                pass
+            
+            if attempt < max_retries - 1:
+                sleep(2)  # Wait before retry
+        
+        return False
+    
+    if check_health("http://localhost:8080"):
+        print("Node is healthy")
+    else:
+        print("Node is unhealthy")
+    ```
+  </Step>
+  
+  <Step title="Check All Nodes Independently">
+    Don't assume cluster health from a single node:
+    
+    ```bash
+    HEALTHY_NODES=0
+    TOTAL_NODES=3
+    
+    for NODE in node1 node2 node3; do
+      if curl -s -f "http://$NODE:8080/api/v2/health/" > /dev/null; then
+        ((HEALTHY_NODES++))
+      fi
+    done
+    
+    if [ $HEALTHY_NODES -ge 2 ]; then
+      echo "Cluster has quorum ($HEALTHY_NODES/$TOTAL_NODES healthy)"
+    else
+      echo "WARNING: Cluster may not have quorum"
+    fi
+    ```
+  </Step>
+  
+  <Step title="Monitor During Deployments">
+    Watch health status during rolling updates:
+    
+    ```bash
+    # Before upgrading a node
+    curl http://node1:8080/api/v2/health/  # Should return 200
+    
+    # Drain the node
+    cockroach node drain 1 --certs-dir=certs
+    
+    # Verify drain completed
+    curl http://node1:8080/api/v2/health/  # Should return 503
+    
+    # Upgrade the node
+    systemctl stop cockroach
+    # ... perform upgrade ...
+    systemctl start cockroach
+    
+    # Wait for health recovery
+    while ! curl -s -f http://node1:8080/api/v2/health/; do
+      echo "Waiting for node to be healthy..."
+      sleep 5
+    done
+    
+    echo "Node is healthy, proceeding to next node"
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting Unhealthy Nodes
+
+If a node returns 503 or is unreachable:
+
+<Tabs>
+  <Tab title="Node Startup">
+    **Symptom**: Health check returns 503 immediately after starting
+    
+    **Resolution**: Wait for initialization to complete (typically 30-60 seconds)
+    
+    ```bash
+    # Check node logs
+    tail -f /var/log/cockroach/cockroach.log | grep "CockroachDB node starting"
+    ```
+  </Tab>
+  
+  <Tab title="Network Issues">
+    **Symptom**: Health check times out or connection refused
+    
+    **Resolution**: Verify network connectivity and firewall rules
+    
+    ```bash
+    # Test connectivity
+    telnet localhost 8080
+    
+    # Check if port is listening
+    netstat -tuln | grep 8080
+    
+    # Test from another host
+    curl -v http://node1:8080/api/v2/health/
+    ```
+  </Tab>
+  
+  <Tab title="Node Draining">
+    **Symptom**: Health check returns 503 during maintenance
+    
+    **Resolution**: This is expected - wait for drain to complete or cancel drain
+    
+    ```bash
+    # Check drain status
+    cockroach node status --certs-dir=certs
+    
+    # Cancel drain if needed
+    systemctl restart cockroach
+    ```
+  </Tab>
+  
+  <Tab title="Cluster Issues">
+    **Symptom**: Multiple nodes unhealthy, cluster unavailable
+    
+    **Resolution**: Check cluster status and quorum
+    
+    ```bash
+    # Check cluster status from a healthy node
+    cockroach node status --certs-dir=certs --host=node1:26257
+    
+    # Review logs for errors
+    grep -i error /var/log/cockroach/cockroach.log
+    ```
+  </Tab>
+</Tabs>
+
+## Secure Clusters
+
+For secure clusters with TLS enabled, use HTTPS and provide the CA certificate:
+
+```bash With CA Certificate
+curl --cacert ca.crt \
+  --request GET \
+  --url https://localhost:8080/api/v2/health/
+```
+
+```bash Skip Certificate Verification (not recommended for production)
+curl --insecure \
+  --request GET \
+  --url https://localhost:8080/api/v2/health/
+```
+
+## Response Time Monitoring
+
+Monitor health check response times to detect degradation:
+
+```bash Measure Response Time
+curl -w "@curl-format.txt" \
+  -o /dev/null \
+  -s \
+  https://localhost:8080/api/v2/health/
+```
+
+Create `curl-format.txt`:
+```
+time_namelookup:  %{time_namelookup}s
+time_connect:     %{time_connect}s
+time_total:       %{time_total}s
+```
+
+Typical response times:
+- **Local**: < 10ms
+- **Same datacenter**: < 50ms
+- **Cross-region**: < 200ms
+
+Consistently slow responses (> 500ms) may indicate:
+- Node resource saturation
+- Network congestion
+- Disk I/O issues
+
+## Integration Examples
+
+### Terraform AWS ALB Health Check
+
+```hcl
+resource "aws_lb_target_group" "cockroachdb" {
+  name     = "cockroachdb-tg"
+  port     = 26257
+  protocol = "TCP"
+  vpc_id   = aws_vpc.main.id
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    interval            = 10
+    protocol            = "HTTP"
+    path                = "/api/v2/health"
+    port                = 8080
+    timeout             = 5
+  }
+}
+```
+
+### Docker Compose Health Check
+
+```yaml
+services:
+  cockroachdb:
+    image: cockroachdb/cockroach:v25.3.0
+    command: start-single-node --insecure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v2/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+```
+
+### Prometheus Blackbox Exporter
+
+```yaml
+modules:
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: [200]
+      method: GET
+      preferred_ip_protocol: "ip4"
+```
+
+Then scrape:
+```yaml
+scrape_configs:
+  - job_name: 'cockroachdb_health'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - http://node1:8080/api/v2/health
+        - http://node2:8080/api/v2/health
+        - http://node3:8080/api/v2/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+```

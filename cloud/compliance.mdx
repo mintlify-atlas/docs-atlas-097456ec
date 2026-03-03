@@ -1,0 +1,499 @@
+---
+title: Compliance and Certifications
+description: Learn about CockroachDB Cloud's regulatory compliance standards and security certifications.
+---
+
+CockroachDB Cloud meets rigorous security and compliance standards to help you meet your regulatory requirements.
+
+## Compliance Overview
+
+When properly configured, CockroachDB Cloud meets the requirements of:
+
+- SOC 2 Type 2
+- PCI DSS 4.0
+- HIPAA
+- ISO 27001 and ISO 27017
+
+## SOC 2 Type 2
+
+**Service Organization Control (SOC) 2 Type 2** certification demonstrates that CockroachDB Cloud's security controls are properly designed and operating effectively over time.
+
+### What is SOC 2?
+
+SOC 2 is an auditing standard developed by the American Institute of Certified Public Accountants (AICPA) that evaluates:
+
+- **Security**: Protection against unauthorized access
+- **Availability**: System uptime and performance
+- **Processing Integrity**: System processing completeness and accuracy
+- **Confidentiality**: Protection of confidential information
+- **Privacy**: Personal information handling
+
+### Coverage
+
+**All CockroachDB Cloud Plans:**
+- CockroachDB Basic
+- CockroachDB Standard
+- CockroachDB Advanced
+
+### Audit Scope
+
+The SOC 2 Type 2 audit covers:
+
+- Infrastructure security
+- Access controls
+- Change management
+- Monitoring and incident response
+- Business continuity
+- Vendor management
+
+### Obtaining Reports
+
+SOC 2 reports are available to customers under NDA:
+
+<Steps>
+  <Step title="Request Report">
+    Contact your Cockroach Labs account representative or [sales@cockroachlabs.com](mailto:sales@cockroachlabs.com)
+  </Step>
+  
+  <Step title="Sign NDA">
+    Execute a non-disclosure agreement
+  </Step>
+  
+  <Step title="Receive Report">
+    Access the latest SOC 2 Type 2 report
+  </Step>
+</Steps>
+
+## PCI DSS
+
+**Payment Card Industry Data Security Standard (PCI DSS)** is required for organizations that store, process, or transmit cardholder data.
+
+### PCI DSS Certification
+
+CockroachDB Advanced has been certified as a **PCI DSS Level 1 Service Provider** by a PCI Qualified Security Assessor (QSA).
+
+**Version**: PCI DSS 4.0
+
+### Requirements
+
+To achieve PCI DSS compliance with CockroachDB Cloud:
+
+**Required:**
+- CockroachDB Advanced cluster
+- Advanced Security add-on enabled
+- Proper configuration (see Configuration Requirements)
+
+**Not Available:**
+- CockroachDB Basic
+- CockroachDB Standard
+
+### Configuration Requirements
+
+<Steps>
+  <Step title="Enable Security Add-on">
+    The Advanced Security add-on provides:
+    - Customer-Managed Encryption Keys (CMEK)
+    - Enhanced audit logging
+    - Additional compliance controls
+  </Step>
+  
+  <Step title="Configure Network Security">
+    - Implement IP allowlisting
+    - Use private connectivity (PrivateLink/PSC)
+    - Enable TLS with verify-full mode
+  </Step>
+  
+  <Step title="Implement Access Controls">
+    - Use least privilege access
+    - Enable Multi-Factor Authentication
+    - Implement role-based access control
+    - Configure SQL user permissions
+  </Step>
+  
+  <Step title="Enable Logging and Monitoring">
+    - Configure audit logging
+    - Export logs to SIEM
+    - Set up alerting
+    - Monitor access patterns
+  </Step>
+  
+  <Step title="Data Protection">
+    - Enable encryption at rest (CMEK)
+    - Configure backup retention
+    - Implement data retention policies
+  </Step>
+</Steps>
+
+### Shared Responsibility
+
+**Cockroach Labs Responsibilities:**
+- Maintain PCI DSS certification
+- Secure underlying infrastructure
+- Provide compliant features and controls
+- Regular security updates
+
+**Customer Responsibilities:**
+- Proper configuration of clusters
+- Access control management
+- Application-level security
+- Compliance validation and testing
+
+### Attestation of Compliance
+
+Cockroach Labs provides:
+- Attestation of Compliance (AOC)
+- Responsibility Matrix
+- Implementation guidance
+
+Contact your account representative for PCI DSS documentation.
+
+## HIPAA
+
+**Health Insurance Portability and Accountability Act (HIPAA)** defines standards for protecting sensitive patient health information (PHI).
+
+### HIPAA Compliance
+
+CockroachDB Advanced configured for PCI DSS compliance also meets HIPAA requirements.
+
+**Requirements:**
+- CockroachDB Advanced cluster
+- Advanced Security add-on
+- PCI DSS configuration applied
+- Business Associate Agreement (BAA)
+
+### Business Associate Agreement
+
+Cockroach Labs will execute a Business Associate Agreement (BAA) with eligible customers:
+
+<Steps>
+  <Step title="Qualify">
+    Ensure you have:
+    - CockroachDB Advanced cluster
+    - Advanced Security add-on
+    - Enterprise support contract
+  </Step>
+  
+  <Step title="Request BAA">
+    Contact your account representative or [sales@cockroachlabs.com](mailto:sales@cockroachlabs.com)
+  </Step>
+  
+  <Step title="Execute Agreement">
+    Review and sign the BAA
+  </Step>
+</Steps>
+
+### HIPAA Controls
+
+Key HIPAA controls in CockroachDB Cloud:
+
+**Administrative Safeguards:**
+- Security management process
+- Workforce security
+- Access management
+- Security awareness training
+
+**Physical Safeguards:**
+- Facility access controls
+- Workstation security
+- Device and media controls
+
+**Technical Safeguards:**
+- Access control
+- Audit controls
+- Integrity controls
+- Transmission security
+
+## ISO 27001 and ISO 27017
+
+**International Organization for Standardization (ISO)** certifications for information security management.
+
+### ISO 27001
+
+General information security management standard covering:
+
+- Information security policies
+- Organization of information security
+- Asset management
+- Access control
+- Cryptography
+- Operations security
+- Communications security
+- Incident management
+- Business continuity
+
+### ISO 27017
+
+Cloud-specific security standard extending ISO 27001 with:
+
+- Cloud service provider controls
+- Cloud service customer controls
+- Shared controls
+- Cloud-specific implementation guidance
+
+### Coverage
+
+**All CockroachDB Cloud Plans:**
+- CockroachDB Basic
+- CockroachDB Standard  
+- CockroachDB Advanced
+
+### Certificates
+
+ISO certificates are available to customers:
+
+<Steps>
+  <Step title="Request Certificate">
+    Contact your account representative or [sales@cockroachlabs.com](mailto:sales@cockroachlabs.com)
+  </Step>
+  
+  <Step title="Receive Documentation">
+    Access ISO 27001 and ISO 27017 certificates
+  </Step>
+</Steps>
+
+## Additional Security Measures
+
+Beyond certifications, CockroachDB Cloud implements:
+
+### Encryption
+
+**Data at Rest:**
+- AES-256 encryption for all data
+- CMEK available (Advanced with security add-on)
+- Encrypted backups
+
+**Data in Transit:**
+- TLS 1.2+ for all connections
+- Certificate-based authentication
+- Perfect forward secrecy
+
+### Access Controls
+
+- Role-based access control (RBAC)
+- Multi-factor authentication (MFA)
+- Single Sign-On (SSO) integration
+- Audit logging
+
+### Infrastructure Security
+
+- Regular security patching
+- Vulnerability scanning
+- Penetration testing
+- Security monitoring and alerting
+
+### Business Continuity
+
+- Multi-region availability
+- Automated backups
+- Disaster recovery capabilities
+- SLA guarantees
+
+## Compliance Configuration Guide
+
+Achieve compliance with CockroachDB Cloud:
+
+### For PCI DSS / HIPAA
+
+<Steps>
+  <Step title="Choose Right Plan">
+    Deploy CockroachDB Advanced with Security add-on
+  </Step>
+  
+  <Step title="Configure Network Security">
+    - Remove public IP allowlist entries
+    - Set up private connectivity (AWS PrivateLink, GCP PSC, or Azure Private Link)
+    - Enable TLS with verify-full
+  </Step>
+  
+  <Step title="Enable CMEK">
+    Configure Customer-Managed Encryption Keys:
+    - AWS KMS
+    - Google Cloud KMS
+    - Azure Key Vault
+  </Step>
+  
+  <Step title="Configure Access Control">
+    - Implement least privilege
+    - Enable MFA for all users
+    - Use SSO for centralized auth
+    - Create role-based access policies
+  </Step>
+  
+  <Step title="Enable Audit Logging">
+    - Configure SQL audit logs
+    - Export to your SIEM
+    - Set up log retention
+    - Configure alerting
+  </Step>
+  
+  <Step title="Implement Data Policies">
+    - Configure backup retention
+    - Set up data lifecycle policies
+    - Implement change data capture (if needed)
+  </Step>
+  
+  <Step title="Document Configuration">
+    - Maintain configuration documentation
+    - Create runbooks
+    - Document security controls
+  </Step>
+  
+  <Step title="Test and Validate">
+    - Perform security testing
+    - Validate compliance controls
+    - Conduct regular audits
+  </Step>
+</Steps>
+
+### For SOC 2 / ISO 27001
+
+<Steps>
+  <Step title="Select Appropriate Plan">
+    Any plan supports SOC 2 and ISO compliance
+  </Step>
+  
+  <Step title="Implement Security Controls">
+    - Configure IP allowlisting or private connectivity
+    - Use TLS encryption
+    - Implement access controls
+    - Enable monitoring
+  </Step>
+  
+  <Step title="Documentation">
+    - Obtain SOC 2 reports
+    - Review control objectives
+    - Map to your security framework
+  </Step>
+</Steps>
+
+## Compliance Responsibilities
+
+### Shared Responsibility Model
+
+| Area | Cockroach Labs | Customer |
+|------|----------------|----------|
+| **Infrastructure** | ✓ Secure cloud infrastructure | |
+| **Platform Security** | ✓ CockroachDB security | |
+| **Compliance Certifications** | ✓ Maintain certifications | |
+| **Data Encryption at Rest** | ✓ Provide encryption | ✓ Configure CMEK (optional) |
+| **Network Security** | ✓ Provide controls | ✓ Configure IP allowlist/private connectivity |
+| **Access Management** | ✓ Provide RBAC/SSO | ✓ Manage users and roles |
+| **Audit Logging** | ✓ Provide logging | ✓ Configure and export logs |
+| **Application Security** | | ✓ Secure applications |
+| **Data Classification** | | ✓ Classify and protect data |
+| **Compliance Validation** | ✓ Provide documentation | ✓ Validate compliance |
+
+## Audit and Compliance Monitoring
+
+Maintain ongoing compliance:
+
+### Regular Reviews
+
+<Steps>
+  <Step title="Monthly">
+    - Review access logs
+    - Check user accounts
+    - Verify configurations
+  </Step>
+  
+  <Step title="Quarterly">
+    - Access control review
+    - Security patch status
+    - Compliance control testing
+  </Step>
+  
+  <Step title="Annually">
+    - Comprehensive security audit
+    - Compliance reassessment
+    - Documentation review
+    - Control effectiveness testing
+  </Step>
+</Steps>
+
+### Compliance Monitoring
+
+**Automated Monitoring:**
+- Configuration drift detection
+- Access pattern analysis
+- Encryption verification
+- Log completeness checks
+
+**Manual Reviews:**
+- User access reviews
+- Policy compliance
+- Documentation updates
+- Security control testing
+
+## Getting Compliance Documentation
+
+Access compliance documentation and reports:
+
+**Available Documents:**
+- SOC 2 Type 2 reports
+- ISO 27001/27017 certificates
+- PCI DSS Attestation of Compliance
+- HIPAA Business Associate Agreement
+- Security whitepaper
+- Responsibility matrix
+
+**How to Obtain:**
+
+<Steps>
+  <Step title="Contact Sales">
+    Email [sales@cockroachlabs.com](mailto:sales@cockroachlabs.com) or contact your account representative
+  </Step>
+  
+  <Step title="Specify Requirements">
+    Indicate which documents you need and for what purpose
+  </Step>
+  
+  <Step title="Complete NDA">
+    Execute NDA if required
+  </Step>
+  
+  <Step title="Receive Documents">
+    Access compliance documentation
+  </Step>
+</Steps>
+
+## Frequently Asked Questions
+
+**Q: Does CockroachDB Cloud have FedRAMP certification?**
+
+A: FedRAMP certification is not currently available. Contact sales for government cloud options.
+
+**Q: Can I use CockroachDB Basic for PCI DSS compliance?**
+
+A: No, PCI DSS compliance requires CockroachDB Advanced with the Security add-on.
+
+**Q: Are all regions supported for compliance?**
+
+A: Compliance certifications cover all generally available CockroachDB Cloud regions. Verify with your account representative for specific region requirements.
+
+**Q: How often are compliance audits performed?**
+
+A: SOC 2 Type 2 audits are performed annually. PCI DSS assessments are conducted annually with quarterly vulnerability scans.
+
+**Q: Can Cockroach Labs help with our compliance audit?**
+
+A: Cockroach Labs provides documentation, attestations, and guidance. Your auditor can request additional information through your account representative.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Security Overview" icon="shield" href="https://www.cockroachlabs.com/docs/cockroachcloud/security-overview">
+    Learn about CockroachDB Cloud security
+  </Card>
+  
+  <Card title="Network Security" icon="network-wired" href="/cloud/network-security">
+    Configure network security
+  </Card>
+  
+  <Card title="PCI DSS Details" icon="credit-card" href="https://www.cockroachlabs.com/docs/cockroachcloud/pci-dss">
+    PCI DSS compliance guide
+  </Card>
+  
+  <Card title="Contact Sales" icon="envelope" href="mailto:sales@cockroachlabs.com">
+    Request compliance documentation
+  </Card>
+</CardGroup>

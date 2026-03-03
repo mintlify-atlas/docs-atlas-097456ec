@@ -1,0 +1,105 @@
+---
+title: ROLLBACK
+description: Roll back the current transaction and discard all transactional updates.
+---
+
+The `ROLLBACK` statement aborts the current transaction and all of its nested transactions, discarding all transactional updates made by statements included in the transaction.
+
+There are two ways to use `ROLLBACK`:
+- The `ROLLBACK` statement rolls back the entire transaction
+- The `ROLLBACK TO SAVEPOINT` statement rolls back and restarts the nested transaction started at the corresponding `SAVEPOINT` statement
+
+## Required privileges
+
+No privileges are required to rollback a transaction. However, privileges are required for each statement within a transaction.
+
+## Syntax
+
+```sql
+ROLLBACK [TRANSACTION]
+```
+
+```sql
+ROLLBACK [TRANSACTION] TO SAVEPOINT savepoint_name
+```
+
+## Parameters
+
+<ParamField path="TO SAVEPOINT cockroach_restart" type="clause">
+  If using advanced client-side transaction retries, retry the transaction. You should execute this statement when a transaction returns a `40001` / `retry transaction` error.
+</ParamField>
+
+<ParamField path="TO SAVEPOINT name" type="clause">
+  If using nested transactions, roll back and restart the nested transaction started at the corresponding `SAVEPOINT` statement.
+</ParamField>
+
+## Examples
+
+### Rollback a transaction
+
+Typically, an application conditionally executes rollbacks, but we can see their behavior by using `ROLLBACK` instead of `COMMIT` directly:
+
+```sql
+SELECT * FROM accounts;
+```
+
+```
+   name   | balance 
+----------+---------
+ Marciela |    1000 
+```
+
+```sql
+BEGIN;
+```
+
+```sql
+UPDATE accounts SET balance = 2500 WHERE name = 'Marciela';
+```
+
+```sql
+ROLLBACK;
+```
+
+```sql
+SELECT * FROM accounts;
+```
+
+```
+   name   | balance 
+----------+---------
+ Marciela |    1000 
+```
+
+### Rollback a nested transaction
+
+The `ROLLBACK TO SAVEPOINT` statement rolls back and restarts the nested transaction started at the corresponding `SAVEPOINT` statement.
+
+For example, the transaction below will insert the values `(1,1)` and `(3,3)` into the table, but not `(2,2)`:
+
+```sql
+BEGIN;
+INSERT INTO kv VALUES (1,1);
+SAVEPOINT my_savepoint;
+INSERT INTO kv VALUES (2,2);
+ROLLBACK TO SAVEPOINT my_savepoint;
+INSERT INTO kv VALUES (3,3);
+COMMIT;
+```
+
+### Retry a transaction
+
+When using advanced client-side transaction retries, use `ROLLBACK TO SAVEPOINT` to handle a transaction that needs to be retried (identified via the `40001` error code or `restart transaction` string in the error message), and then re-execute the statements you want the transaction to contain.
+
+```sql
+ROLLBACK TO SAVEPOINT cockroach_restart;
+```
+
+## See also
+
+- SAVEPOINT
+- BEGIN
+- COMMIT
+- RELEASE SAVEPOINT
+- SHOW SAVEPOINT STATUS
+- Transactions

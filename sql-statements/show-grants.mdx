@@ -1,0 +1,247 @@
+---
+title: SHOW GRANTS
+description: List the privileges granted to users with the SHOW GRANTS statement.
+---
+
+The `SHOW GRANTS` statement lists one of the following:
+- The roles granted to users in a cluster
+- The privileges granted to users on databases, user-defined functions, schemas, tables, user-defined types, or external connections
+
+## Syntax
+
+### Show privilege grants
+
+Use the following syntax to show the privileges granted to users on database objects:
+
+```sql
+SHOW GRANTS [ON [DATABASE | FUNCTION | SCHEMA | TABLE | TYPE | EXTERNAL CONNECTION] targets] 
+  [FOR users]
+```
+
+When `DATABASE` is omitted, the schema, tables, and types in the current database are listed.
+
+### Show role grants
+
+Use the following syntax to show the role grants for users in a cluster:
+
+```sql
+SHOW GRANTS ON ROLE [roles] [FOR users]
+```
+
+## Parameters
+
+<ParamField path="targets" type="identifier">
+  A comma-separated list of database, function, schema, table, or user-defined type names.
+  
+  If the function name is not unique, you must provide the full function signature.
+  
+  To list the privilege grants for all tables in the current database, you can use `SHOW GRANTS ON TABLE *`.
+</ParamField>
+
+<ParamField path="users" type="identifier">
+  A comma-separated list of the users whose privileges or roles you want to show.
+</ParamField>
+
+<ParamField path="roles" type="identifier">
+  A comma-separated list of the roles whose grants you want to show.
+</ParamField>
+
+## Response
+
+### Privilege grants
+
+The `SHOW GRANTS ON [DATABASE | FUNCTION | SCHEMA | TABLE | TYPE | EXTERNAL CONNECTION]` statement can return the following fields:
+
+- `database_name` - The name of the database
+- `function_name` - The name of the user-defined function
+- `schema_name` - The name of the schema
+- `table_name` - The name of the table
+- `type_name` - The name of the user-defined type
+- `connection_name` - The name of the external connection
+- `grantee` - The name of the user or role that was granted the privilege
+- `privilege_type` - The name of the privilege
+- `is_grantable` - `TRUE` if the grantee has the grant option on the object; `FALSE` if not
+
+### Role grants
+
+The `SHOW GRANTS ON ROLE` statement returns the following fields:
+
+- `role_name` - The name of the role
+- `member` - The users in the role
+- `is_admin` - If `true`, the role is an admin role
+
+## Required privileges
+
+- No privileges are required to view privileges granted to users
+- For `SHOW GRANTS ON ROLES`, the user must have the `SELECT` privilege on the system table
+
+## Examples
+
+### Show all grants
+
+To list all grants for all users and roles on the current database and its tables:
+
+```sql
+SHOW GRANTS;
+```
+
+```
+  database_name |    schema_name     |     object_name      | object_type | grantee | privilege_type | is_grantable
+----------------+--------------------+----------------------+-------------+---------+----------------+---------------
+  movr          | public             | promo_codes          | table       | admin   | ALL            |      t
+  movr          | public             | promo_codes          | table       | root    | ALL            |      t
+  movr          | public             | rides                | table       | admin   | ALL            |      t
+  movr          | public             | rides                | table       | root    | ALL            |      t
+```
+
+### Show a specific user's grants
+
+```sql
+CREATE USER max WITH PASSWORD 'roach';
+```
+
+```sql
+GRANT ALL ON DATABASE movr TO max WITH GRANT OPTION;
+```
+
+```sql
+SHOW GRANTS FOR max;
+```
+
+```
+  database_name | schema_name | object_name | object_type | grantee | privilege_type | is_grantable
+----------------+-------------+-------------+-------------+---------+----------------+---------------
+  movr          | NULL        | NULL        | database    | max     | ALL            |      t
+  movr          | public      | NULL        | schema      | public  | CREATE         |      f
+  movr          | public      | NULL        | schema      | public  | USAGE          |      f
+```
+
+### Show grants on databases
+
+**Specific database, all users and roles:**
+
+```sql
+SHOW GRANTS ON DATABASE movr;
+```
+
+```
+  database_name | grantee | privilege_type | is_grantable
+----------------+---------+----------------+---------------
+  movr          | admin   | ALL            |      t
+  movr          | max     | ALL            |      t
+  movr          | public  | CONNECT        |      f
+  movr          | root    | ALL            |      t
+```
+
+**Specific database, specific user:**
+
+```sql
+SHOW GRANTS ON DATABASE movr FOR max;
+```
+
+```
+  database_name | grantee | privilege_type | is_grantable
+----------------+---------+----------------+---------------
+  movr          | max     | ALL            |      t
+  movr          | public  | CONNECT        |      f
+```
+
+### Show grants on tables
+
+```sql
+GRANT ALL ON TABLE users TO max WITH GRANT OPTION;
+```
+
+**Specific table, all users and roles:**
+
+```sql
+SHOW GRANTS ON TABLE users;
+```
+
+```
+  database_name | schema_name | table_name | grantee | privilege_type | is_grantable
+----------------+-------------+------------+---------+----------------+---------------
+  movr          | public      | users      | admin   | ALL            |      t
+  movr          | public      | users      | max     | ALL            |      t
+  movr          | public      | users      | root    | ALL            |      t
+```
+
+**Specific table, specific role or user:**
+
+```sql
+SHOW GRANTS ON TABLE users FOR max;
+```
+
+```
+  database_name | schema_name | table_name | grantee | privilege_type | is_grantable
+----------------+-------------+------------+---------+----------------+---------------
+  movr          | public      | users      | max     | ALL            |      t
+```
+
+### Show grants on all tables
+
+```sql
+SHOW GRANTS ON TABLE *;
+```
+
+### Show role grants
+
+```sql
+CREATE ROLE developer WITH CREATEDB;
+```
+
+```sql
+CREATE USER abbey WITH PASSWORD 'lincoln';
+```
+
+```sql
+GRANT developer TO abbey;
+```
+
+**All roles:**
+
+```sql
+SHOW GRANTS ON ROLE;
+```
+
+```
+  role_name | member | is_admin
+------------+--------+-----------
+  admin     | abbey  |  false
+  admin     | root   |  true
+  developer | abbey  |  false
+```
+
+**Specific role:**
+
+```sql
+SHOW GRANTS ON ROLE developer;
+```
+
+```
+  role_name | member | is_admin
+------------+--------+-----------
+  developer | abbey  |  false
+```
+
+**For specific users:**
+
+```sql
+SHOW GRANTS ON ROLE FOR abbey;
+```
+
+```
+  role_name | member | is_admin
+------------+--------+-----------
+  admin     | abbey  |  false
+  developer | abbey  |  false
+```
+
+## See also
+
+- GRANT
+- REVOKE
+- CREATE ROLE
+- ALTER ROLE
+- DROP ROLE
+- Privileges

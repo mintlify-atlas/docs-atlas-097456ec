@@ -1,0 +1,530 @@
+---
+title: Billing Management
+description: Learn how to manage billing, payments, and invoices for your CockroachDB Cloud organization.
+---
+
+Manage billing details, payment methods, and view usage and invoices for your CockroachDB Cloud organization.
+
+## Access Billing
+
+Users with the **Billing Coordinator** or **Billing Viewer** role can access billing information.
+
+<Steps>
+  <Step title="Navigate to Billing">
+    Click **Billing** in the Cloud Console navigation
+  </Step>
+  
+  <Step title="View Billing Information">
+    The Billing page shows:
+    - Current billing period charges
+    - Payment method
+    - Billing contact information
+    - Usage details
+    - Invoice history
+  </Step>
+</Steps>
+
+## Set Up Billing
+
+Configure payment methods and billing information.
+
+### Add Payment Method
+
+Choose from multiple payment options:
+
+<Tabs>
+  <Tab title="Credit Card">
+    <Steps>
+      <Step title="Access Payment Details">
+        Go to **Billing** > **Payment details** tab
+      </Step>
+      
+      <Step title="Add Card">
+        1. Click **Add a credit card**
+        2. Enter card details:
+           - Card number
+           - Expiration date
+           - CVV
+           - Cardholder name
+        3. Click **Save card**
+      </Step>
+      
+      <Step title="Add Billing Information">
+        1. Click **Add a billing address**
+        2. Enter:
+           - Company name (optional)
+           - Street address
+           - City, State/Province
+           - ZIP/Postal code
+           - Country
+        3. Click **Submit**
+      </Step>
+      
+      <Step title="Add Billing Email">
+        1. Click **Add a billing email**
+        2. Enter email address for invoices
+        3. Click **Submit**
+      </Step>
+    </Steps>
+  </Tab>
+  
+  <Tab title="AWS Marketplace">
+    <Steps>
+      <Step title="Subscribe via AWS">
+        1. Visit [CockroachDB on AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-n3xpypxea63du)
+        2. Click **View purchase options**
+        3. Click **Subscribe**
+        4. Click **Set up your account**
+      </Step>
+      
+      <Step title="Link to Cloud Console">
+        1. Sign in to your CockroachDB Cloud account
+        2. Select organization to link
+        3. Click **Subscribe to AWS Marketplace**
+      </Step>
+      
+      <Step title="Confirm Setup">
+        Billing now goes through your AWS account
+      </Step>
+    </Steps>
+    
+    <Info>
+    AWS Marketplace billing consolidates CockroachDB charges with your AWS bill. AWS credits can be applied.
+    </Info>
+  </Tab>
+  
+  <Tab title="GCP Marketplace">
+    <Steps>
+      <Step title="Subscribe via GCP">
+        1. Visit [CockroachDB on GCP Marketplace](https://console.cloud.google.com/marketplace/product/cockroachlabs/cockroachdb-pay-as-you-go)
+        2. Click **Subscribe**
+        3. Select billing account
+        4. Agree to terms
+        5. Click **Subscribe**
+      </Step>
+      
+      <Step title="Link to Cloud Console">
+        1. Click **Sign up with Cockroach Labs**
+        2. Sign in to your account
+        3. Select organization
+        4. Click **Subscribe to Google Cloud Marketplace**
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+### Update Payment Method
+
+<Steps>
+  <Step title="Navigate to Payment Details">
+    Go to **Billing** > **Payment details**
+  </Step>
+  
+  <Step title="Edit Payment Method">
+    1. Click pencil icon next to **Payment method**
+    2. Enter new credit card details
+    3. Click **Save card**
+  </Step>
+  
+  <Step title="Update Billing Address">
+    1. Click pencil icon next to **Billing address**
+    2. Update address information
+    3. Click **Submit**
+  </Step>
+</Steps>
+
+### Change Billing Email
+
+<Steps>
+  <Step title="Edit Email">
+    1. Go to **Billing** > **Payment details**
+    2. Click pencil icon next to **Email**
+    3. Enter new email address
+    4. Click **Submit**
+  </Step>
+</Steps>
+
+## View Current Usage
+
+Monitor your current billing period charges.
+
+### Overview Tab
+
+The **Overview** tab shows:
+
+**Current Billing Period:**
+- Total charges to date
+- Estimated month-end total
+- Breakdown by cluster
+- Cost by resource type
+
+**Credits (if applicable):**
+- Available credits
+- Credit usage rate
+- Credit expiration date
+- Contract details
+
+<Steps>
+  <Step title="View Usage Details">
+    Click on any cluster to see detailed usage:
+    - Compute costs
+    - Storage costs
+    - Data transfer
+    - Backups
+    - Changefeeds
+  </Step>
+  
+  <Step title="Filter by Folder">
+    If using folders, view costs grouped by folder hierarchy
+  </Step>
+</Steps>
+
+## View Invoices
+
+Access historical billing information.
+
+### Invoices Tab
+
+<Steps>
+  <Step title="Access Invoices">
+    Click **Billing** > **Invoices** tab
+  </Step>
+  
+  <Step title="View Invoice List">
+    See all past invoices with:
+    - Billing period
+    - Total amount
+    - Payment status
+    - Invoice date
+  </Step>
+  
+  <Step title="View Invoice Details">
+    Click any invoice to see:
+    - Itemized charges by cluster
+    - Resource usage breakdown
+    - Credits applied
+    - Taxes and fees
+  </Step>
+</Steps>
+
+### Export Invoices
+
+Download invoices for accounting:
+
+<Steps>
+  <Step title="Select Invoice">
+    Go to **Invoices** tab and find the invoice
+  </Step>
+  
+  <Step title="Download">
+    Click **...** menu and select:
+    - **Export CSV**: Detailed line items
+    - **Export PDF**: Traditional invoice format
+  </Step>
+</Steps>
+
+**CSV Export includes:**
+- Cluster name and ID
+- Resource type
+- Usage quantity
+- Unit price
+- Total cost
+- Folder path (if using folders)
+
+**PDF Export includes:**
+- Organization details
+- Billing address
+- Invoice summary
+- High-level usage breakdown
+- Payment information
+
+## Understand Your Bill
+
+Break down invoice charges.
+
+### Line Item Categories
+
+<Accordion title="Compute">
+  **Basic:**
+  - Request Units consumed
+  
+  **Standard:**
+  - vCPU-hours provisioned
+  - Billed hourly
+  
+  **Advanced:**
+  - Node-hours by machine type
+  - Per-region breakdown
+</Accordion>
+
+<Accordion title="Storage">
+  **Basic/Standard:**
+  - GiB-hours used
+  - Auto-scales with data
+  
+  **Advanced:**
+  - GiB-hours provisioned per node
+  - IOPS charges (AWS only)
+</Accordion>
+
+<Accordion title="Data Transfer">
+  - Same-region egress
+  - Cross-region transfer
+  - Public internet egress
+  - Private endpoint traffic
+</Accordion>
+
+<Accordion title="Backups">
+  - Managed backup storage (per GiB-month)
+  - Self-managed backup egress
+  - Tiered pricing applied
+</Accordion>
+
+<Accordion title="Changefeeds">
+  - Watched data size (per GiB-month)
+  - Tiered pricing
+</Accordion>
+
+### Credits and Discounts
+
+Credits applied to invoices:
+
+**Trial Credits:**
+- $400 for 30-day trials
+- Applied automatically
+- Shown as line item deduction
+
+**Free Monthly Credit (Basic):**
+- $15/month for monthly billing
+- First usage is free up to limit
+
+**Enterprise Credits:**
+- Annual contract credits
+- Applied in order purchased
+- Balance shown on Overview tab
+
+## Manage Marketplace Billing
+
+### AWS Marketplace
+
+**View Usage:**
+- Charges appear on AWS bill
+- Detailed usage in CockroachDB Console
+- AWS Cost Explorer shows CockroachDB costs
+
+**Unsubscribe:**
+
+<Warning>
+Unsubscribing deletes clusters within 6 hours unless you add an alternative payment method.
+</Warning>
+
+<Steps>
+  <Step title="Go to AWS Marketplace">
+    Navigate to **Manage Subscriptions**
+  </Step>
+  
+  <Step title="Cancel Subscription">
+    1. Find CockroachDB (pay-as-you-go)
+    2. Click **Actions** > **Cancel Subscription**
+    3. Confirm cancellation
+  </Step>
+  
+  <Step title="Add Alternative Payment">
+    Add credit card in CockroachDB Console within 6 hours
+  </Step>
+</Steps>
+
+### GCP Marketplace
+
+**View Usage:**
+- Charges on GCP bill
+- Detailed usage in CockroachDB Console
+- GCP Billing shows CockroachDB costs
+
+**Unsubscribe:**
+
+<Warning>
+Clusters are deleted within 6 hours unless you add an alternative payment method.
+</Warning>
+
+<Steps>
+  <Step title="Access GCP Marketplace Orders">
+    Go to [GCP Marketplace Orders](https://console.cloud.google.com/marketplace/orders)
+  </Step>
+  
+  <Step title="Cancel Order">
+    1. Select billing account
+    2. Find CockroachDB (pay-as-you-go)
+    3. Click **Cancel Order**
+    4. Confirm cancellation
+  </Step>
+</Steps>
+
+## Cost Management
+
+### Set Spending Limits
+
+**Basic Clusters:**
+
+<Steps>
+  <Step title="Configure Spend Limit">
+    1. Go to cluster **Overview** page
+    2. Click **Edit** next to **Spend limit**
+    3. Enter maximum monthly spend
+    4. Click **Save**
+  </Step>
+  
+  <Step title="Monitor Usage">
+    Cluster is throttled when limit is reached
+  </Step>
+</Steps>
+
+### Budget Alerts
+
+Set up notifications for spending thresholds:
+
+<Steps>
+  <Step title="Configure Alerts">
+    1. Go to **Billing** > **Alerts**
+    2. Click **Add Alert**
+    3. Set threshold amount
+    4. Add email recipients
+    5. Click **Save**
+  </Step>
+</Steps>
+
+### Cost Optimization
+
+**Review Regularly:**
+- Check current usage weekly
+- Compare to previous months
+- Identify cost trends
+- Optimize underutilized clusters
+
+**Use Folders:**
+- Organize clusters by project/team
+- View costs grouped by folder
+- Allocate costs appropriately
+- Track spending by department
+
+**Right-Size Clusters:**
+- Review actual vs provisioned capacity
+- Scale down during off-peak
+- Delete unused dev/test clusters
+- Use appropriate plan for workload
+
+## Billing API
+
+Access billing data programmatically.
+
+### Get Invoices
+
+```bash
+curl -X GET \
+  https://cockroachlabs.cloud/api/v1/invoices \
+  -H "Authorization: Bearer {api-key}"
+```
+
+### Get Current Usage
+
+```bash
+curl -X GET \
+  https://cockroachlabs.cloud/api/v1/usage/current \
+  -H "Authorization: Bearer {api-key}"
+```
+
+### Get Cluster Costs
+
+```bash
+curl -X GET \
+  https://cockroachlabs.cloud/api/v1/clusters/{cluster-id}/costs \
+  -H "Authorization: Bearer {api-key}"
+```
+
+## Non-Payment Policy
+
+What happens if payment fails:
+
+**Payment Failure:**
+1. Email notification sent
+2. Grace period begins (usually 7 days)
+3. Retry payment attempts
+
+**If Unresolved:**
+1. Cluster access restricted
+2. Read-only mode enabled
+3. Further notification emails
+
+**Final Action:**
+1. Clusters deleted after 30 days
+2. Data permanently removed
+3. No recovery possible
+
+<Warning>
+Keep payment information current to avoid service interruption.
+</Warning>
+
+## Troubleshooting
+
+### Payment Declined
+
+**Causes:**
+- Insufficient funds
+- Card expired
+- Security block by bank
+- Incorrect billing address
+
+**Solutions:**
+1. Update payment method
+2. Contact your bank
+3. Try alternative payment method
+4. Update billing address
+
+### Cannot Access Billing
+
+**Issue**: Billing page not accessible
+
+**Solutions:**
+1. Verify you have Billing Coordinator or Billing Viewer role
+2. Check you're in correct organization
+3. Contact Organization Admin for access
+
+### Invoice Discrepancy
+
+**Issue**: Unexpected charges
+
+**Solutions:**
+1. Review usage details in invoice
+2. Check for data transfer costs
+3. Verify backup storage charges
+4. Contact [Support](https://support.cockroachlabs.com)
+
+### Marketplace Billing Issues
+
+**Issue**: Charges not appearing correctly
+
+**Solutions:**
+1. Allow 24-48 hours for marketplace sync
+2. Check marketplace console
+3. Verify subscription is active
+4. Contact Support for assistance
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Pricing Details" icon="dollar-sign" href="/cloud/pricing">
+    Understand pricing components
+  </Card>
+  
+  <Card title="Cost Optimization" icon="chart-line" href="https://www.cockroachlabs.com/docs/cockroachcloud/resource-usage">
+    Optimize resource usage
+  </Card>
+  
+  <Card title="Plan Comparison" icon="table" href="/cloud/plan-comparison">
+    Compare plan features and costs
+  </Card>
+  
+  <Card title="Support" icon="life-ring" href="https://support.cockroachlabs.com">
+    Get help with billing
+  </Card>
+</CardGroup>

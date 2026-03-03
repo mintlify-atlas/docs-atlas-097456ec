@@ -1,0 +1,96 @@
+---
+title: CockroachDB Cloud API Overview
+description: Learn how to programmatically manage CockroachDB Cloud clusters using the REST API
+---
+
+The CockroachDB Cloud API is a REST interface that provides programmatic access to manage the lifecycle of clusters within your organization. You can use the API to create, configure, monitor, and manage clusters, SQL users, backups, and other resources.
+
+## API Base URL
+
+All API requests are made to:
+
+```
+https://cockroachlabs.cloud/api/v1
+```
+
+## Key Features
+
+The Cloud API enables you to:
+
+- **Cluster Management**: Create, update, and delete clusters across Basic, Standard, and Advanced plans
+- **User Management**: Create and manage SQL users and their passwords
+- **Resource Configuration**: Adjust compute resources, storage limits, and usage controls
+- **Monitoring**: Retrieve cluster status, node information, and audit logs
+- **Backup & Restore**: Manage backup policies and restore operations
+- **Security**: Configure CMEK (Customer-Managed Encryption Keys) for Advanced clusters
+
+## Service Accounts and Permissions
+
+API access requires a service account with appropriate permissions:
+
+- **Cluster Admin**: Full access to all cluster operations
+- **Cluster Creator**: Can create and delete clusters
+- **Cluster Developer**: Can view and modify existing clusters
+- **Cluster Operator**: Can manage cluster maintenance settings
+- **Billing Coordinator**: Can view invoices and billing information
+
+You create service accounts and generate API keys through the [CockroachDB Cloud Console](https://cockroachlabs.cloud/).
+
+## Rate Limiting
+
+<Note>
+The Cloud API is rate-limited to **10 requests per second per user**. When you exceed this limit, you'll receive an HTTP 429 response with a `Retry-After` header and a "rate limit exceeded" message.
+</Note>
+
+## API Versioning
+
+The Cloud API uses date-based versioning in the format `YYYY-MM-DD` (ISO 8601). The current version is `2024-09-16`.
+
+You should specify the API version using the `Cc-Version` header in all requests:
+
+```bash
+Cc-Version: 2024-09-16
+```
+
+<Warning>
+If you omit the `Cc-Version` header, the API defaults to the latest version. To ensure stability, always specify the version your application expects.
+</Warning>
+
+## Alternative Tools
+
+In addition to the REST API, you can manage CockroachDB Cloud resources using:
+
+- **CockroachDB Cloud Terraform Provider**: Infrastructure-as-code approach for provisioning and managing clusters
+- **CockroachDB Cloud Console**: Web-based UI for interactive cluster management
+
+## Support Policy
+
+Future versions of the API may introduce new endpoints and features. Within a major version:
+
+- Existing endpoints and their behavior remain stable
+- New endpoints may be added in minor versions
+- Breaking changes will only occur with new major versions
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Learn how to authenticate your API requests
+  </Card>
+  <Card title="Cluster Management" icon="server" href="/api/clusters">
+    Create and manage CockroachDB Cloud clusters
+  </Card>
+  <Card title="Database Operations" icon="database" href="/api/databases">
+    Manage databases within your clusters
+  </Card>
+  <Card title="User Management" icon="users" href="/api/users">
+    Create and manage SQL users
+  </Card>
+</CardGroup>
+
+## API Reference Documentation
+
+For complete API specifications including all endpoints, parameters, and response schemas, refer to:
+
+- [Cloud API v1 Reference](https://www.cockroachlabs.com/docs/api/cloud/v1)
+- [Cluster API v2 Reference](https://www.cockroachlabs.com/docs/api/cluster/v2)

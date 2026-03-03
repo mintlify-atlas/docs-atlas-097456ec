@@ -1,0 +1,156 @@
+---
+title: SQL Overview
+description: Learn about CockroachDB's SQL implementation and PostgreSQL compatibility
+---
+
+CockroachDB is a distributed SQL database that supports the PostgreSQL wire protocol and the majority of PostgreSQL syntax. You can use existing PostgreSQL-compatible drivers and ORMs to connect to CockroachDB without changing your application code.
+
+## PostgreSQL Compatibility
+
+CockroachDB is compatible with version 3.0 of the PostgreSQL wire protocol (pgwire) and works with the majority of PostgreSQL database tools. This means that existing applications built on PostgreSQL can often be migrated to CockroachDB without changing application code.
+
+### What's Supported
+
+CockroachDB supports:
+
+- **PostgreSQL wire protocol**: Connect using any PostgreSQL-compatible driver or tool
+- **Standard SQL syntax**: Most PostgreSQL SQL statements work in CockroachDB
+- **PostgreSQL data types**: All common data types including JSONB, arrays, and UUIDs
+- **Transactions**: Full ACID compliance with serializable isolation by default
+- **PostgreSQL functions**: Most built-in PostgreSQL functions and operators
+
+### Key Differences from PostgreSQL
+
+While CockroachDB is highly compatible with PostgreSQL, some differences exist due to its distributed architecture:
+
+<Tabs>
+  <Tab title="Integer Division">
+    In PostgreSQL, division of integers results in an integer. In CockroachDB, integer division results in a `DECIMAL`.
+
+    ```sql
+    -- PostgreSQL returns 1
+    -- CockroachDB returns 1.5
+    SELECT 1 + 1 / 2;
+    ```
+
+    Use the `//` operator for floor division:
+
+    ```sql
+    SELECT 1 + 1 // 2;  -- Returns 1
+    ```
+  </Tab>
+
+  <Tab title="Float Overflow">
+    PostgreSQL returns an error when `float` overflows. CockroachDB returns Infinity:
+
+    ```sql
+    SELECT 1e300::float * 1e10::float;
+    -- Returns: +Inf
+
+    SELECT pow(0::float, -1::float);
+    -- Returns: +Inf
+    ```
+  </Tab>
+
+  <Tab title="Shift Operations">
+    PostgreSQL modulos shift arguments to the bit size of the underlying type. CockroachDB does not perform this modulo:
+
+    ```sql
+    SELECT 1::int << 32;
+    -- PostgreSQL: 1 (because 32 % 32 = 0)
+    -- CockroachDB: 4294967296
+    ```
+
+    Manually add modulo for PostgreSQL behavior:
+
+    ```sql
+    SELECT 1::int << (x % 64);
+    ```
+  </Tab>
+</Tabs>
+
+## SQL Shell Help
+
+In the `cockroach sql` shell, you can get inline help about SQL statements and functions:
+
+<CodeGroup>
+```bash Statement Help
+\h [statement]
+```
+
+```bash Function Help
+\hf [function]
+```
+</CodeGroup>
+
+## Transaction Model
+
+CockroachDB supports bundling multiple SQL statements into a single all-or-nothing transaction. Each transaction guarantees ACID semantics spanning arbitrary tables and rows, even when data is distributed.
+
+### Key Features
+
+- **ACID Compliance**: All transactions are atomic, consistent, isolated, and durable
+- **Serializable Isolation**: By default, transactions use `SERIALIZABLE` isolation
+- **Read Committed**: Optional `READ COMMITTED` isolation level available
+- **Distributed Transactions**: Transactions work seamlessly across multiple nodes
+
+```sql Example Transaction
+BEGIN;
+
+SAVEPOINT cockroach_restart;
+
+UPDATE products SET inventory = 0 WHERE sku = '8675309';
+
+INSERT INTO orders (customer, sku, status) VALUES (1001, '8675309', 'new');
+
+RELEASE SAVEPOINT cockroach_restart;
+
+COMMIT;
+```
+
+## Statement Categories
+
+CockroachDB organizes SQL statements into several categories:
+
+### Data Definition (DDL)
+
+Create, modify, and drop database objects:
+
+- `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`
+- `CREATE INDEX`, `ALTER INDEX`, `DROP INDEX`
+- `CREATE DATABASE`, `ALTER DATABASE`, `DROP DATABASE`
+- `CREATE VIEW`, `ALTER VIEW`, `DROP VIEW`
+
+### Data Manipulation (DML)
+
+Query and modify data:
+
+- `SELECT` - Query data from tables
+- `INSERT` - Insert new rows
+- `UPDATE` - Modify existing rows
+- `DELETE` - Remove rows
+- `UPSERT` - Insert or update rows
+
+### Data Control (DCL)
+
+Manage access and permissions:
+
+- `GRANT`, `REVOKE` - Manage privileges
+- `CREATE USER`, `DROP USER` - Manage users
+- `CREATE ROLE`, `DROP ROLE` - Manage roles
+
+### Transaction Control
+
+Manage transactions:
+
+- `BEGIN` - Start a transaction
+- `COMMIT` - Commit a transaction
+- `ROLLBACK` - Abort a transaction
+- `SAVEPOINT` - Create nested transactions
+
+## See Also
+
+- [SQL Statements](/sql/statements)
+- [Data Types](/sql/data-types)
+- [Functions and Operators](/sql/functions)
+- [Transactions](/sql/transactions)

@@ -1,0 +1,197 @@
+---
+title: DELETE
+description: Delete one or more rows from a table with the DELETE statement.
+---
+
+The `DELETE` statement deletes rows from a table.
+
+<Warning>
+If you delete a row that is referenced by a foreign key constraint and has an `ON DELETE` action, all of the dependent rows will also be deleted or updated.
+</Warning>
+
+<Info>
+To delete columns, see `ALTER TABLE ... DROP COLUMN`.
+</Info>
+
+## Required privileges
+
+You must have the `DELETE` and `SELECT` privileges on the table.
+
+## Syntax
+
+```sql
+[WITH common_table_expr [, ...]]
+DELETE FROM table_name [[AS] table_alias_name]
+  [USING table_ref [, ...]]
+  [WHERE condition]
+  [ORDER BY ...]
+  [LIMIT row_count]
+  [RETURNING ...];
+```
+
+## Parameters
+
+<ParamField path="common_table_expr" type="expression">
+  See Common Table Expressions.
+</ParamField>
+
+<ParamField path="table_name" type="identifier">
+  The name of the table that contains the rows you want to delete.
+</ParamField>
+
+<ParamField path="AS table_alias_name" type="alias">
+  An alias for the table name. When an alias is provided, it completely hides the actual table name.
+</ParamField>
+
+<ParamField path="USING table_ref" type="reference">
+  Delete rows based on a table join, where `table_ref` specifies another table or tables to reference.
+</ParamField>
+
+<ParamField path="WHERE condition" type="condition">
+  A condition that returns Boolean values using columns. Delete rows that return `TRUE`.
+  
+  **Without a `WHERE` clause, `DELETE` removes all rows from the table.** To delete all rows in a table, we recommend using `TRUNCATE` instead of `DELETE`.
+</ParamField>
+
+<ParamField path="sort_clause" type="clause">
+  An `ORDER BY` clause for ordering query results.
+</ParamField>
+
+<ParamField path="limit_clause" type="clause">
+  A `LIMIT` clause to limit the number of rows deleted.
+</ParamField>
+
+<ParamField path="RETURNING target_list" type="clause">
+  Return values based on rows deleted, where `target_list` can be specific column names from the table, `*` for all columns, or computations using scalar expressions.
+  
+  To return nothing in the response, not even the number of rows deleted, use `RETURNING NOTHING`.
+</ParamField>
+
+## Success responses
+
+Successful `DELETE` statements return one of the following:
+
+- `DELETE` *int* - *int* rows were deleted. `DELETE` statements that do not delete any rows respond with `DELETE 0`. When `RETURNING NOTHING` is used, this information is not included in the response.
+- Retrieved table - Including the `RETURNING` clause retrieves the deleted rows, using the columns identified by the clause's parameters.
+
+## Disk space usage
+
+Deleting a row does not immediately free up the disk space. CockroachDB retains the ability to query tables historically.
+
+If disk usage is a concern, reduce the time-to-live (TTL) for the zone by setting `gc.ttlseconds` to a lower value, which will cause garbage collection to clean up deleted objects more frequently.
+
+## Force index selection
+
+By using the explicit index annotation (index hinting), you can override CockroachDB's index selection and use a specific index for deleting rows.
+
+```sql
+DELETE FROM table@my_idx;
+```
+
+## Examples
+
+### Delete rows using primary key/unique columns
+
+Using columns with the Primary Key or Unique constraints to delete rows ensures your statement is unambiguous—no two rows contain the same column value.
+
+```sql
+DELETE FROM promo_codes WHERE code = 'about_stuff_city';
+```
+
+```
+DELETE 1
+```
+
+### Delete rows using non-unique columns
+
+Deleting rows using non-unique columns removes every row that returns `TRUE` for the `WHERE` clause.
+
+```sql
+DELETE FROM promo_codes WHERE creation_time > '2019-01-30 00:00:00+00:00';
+```
+
+```
+DELETE 4
+```
+
+### Delete rows using a table join
+
+You can delete rows based on a table join. Use the `USING` clause to specify another table.
+
+```sql
+DELETE FROM promo_codes USING user_promo_codes 
+  WHERE user_promo_codes.code = promo_codes.code;
+```
+
+```
+DELETE 5
+```
+
+### Return deleted rows
+
+To see which rows your statement deleted, include the `RETURNING` clause to retrieve them using the columns you specify.
+
+#### Use all columns
+
+By specifying `*`, you retrieve all columns of the deleted rows:
+
+```sql
+DELETE FROM promo_codes WHERE creation_time > '2019-01-29 00:00:00+00:00' 
+  RETURNING *;
+```
+
+#### Use specific columns
+
+To retrieve specific columns, name them in the `RETURNING` clause:
+
+```sql
+DELETE FROM promo_codes WHERE creation_time > '2019-01-29 00:00:00+00:00' 
+  RETURNING code, rules;
+```
+
+```
+           code          |                    rules
++------------------------+----------------------------------------------+
+  box_investment_stuff   | {"type": "percent_discount", "value": "10%"}
+  energy_newspaper_field | {"type": "percent_discount", "value": "10%"}
+```
+
+#### Change column labels
+
+When `RETURNING` specific columns, you can change their labels using `AS`:
+
+```sql
+DELETE FROM promo_codes WHERE creation_time > '2019-01-28 00:00:00+00:00' 
+  RETURNING code, rules AS discount;
+```
+
+#### Sort and return deleted rows
+
+To sort and return deleted rows:
+
+```sql
+WITH a AS (DELETE FROM promo_codes WHERE creation_time > '2019-01-27 00:00:00+00:00' RETURNING *)
+  SELECT * FROM a ORDER BY expiration_time;
+```
+
+### Delete with index hints
+
+Suppose you create a multi-column index on the `users` table:
+
+```sql
+CREATE INDEX ON users (name, city);
+```
+
+You can force the delete to use a specific index:
+
+```sql
+DELETE FROM users@users_name_city_idx WHERE name='Jon Snow';
+```
+
+## See also
+
+- INSERT
+- UPDATE
+- UPSERT
+- SELECT
+- TRUNCATE

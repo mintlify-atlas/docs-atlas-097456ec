@@ -1,0 +1,307 @@
+---
+title: Install CockroachDB
+description: Install CockroachDB on Mac, Linux, or Windows for local development and testing.
+---
+
+This guide shows you how to install CockroachDB on your local machine. Choose your operating system below and follow the installation method that works best for you.
+
+<Info>
+For production deployments, consider [CockroachDB Cloud](https://cockroachlabs.cloud/signup) for a fully managed, enterprise-grade database service.
+</Info>
+
+## Choose your platform
+
+<Tabs>
+  <Tab title="macOS">
+    <Note>
+    CockroachDB on macOS is experimental and not suitable for production deployments.
+    </Note>
+
+    ### Use Homebrew (Recommended)
+
+    The easiest way to install CockroachDB on macOS is using Homebrew. For CockroachDB v22.2.x and above, Homebrew installs binaries for your system architecture, either Intel or ARM (Apple Silicon).
+
+    <Steps>
+      <Step title="Install Homebrew">
+        If you don't have Homebrew installed, install it first:
+
+        ```bash
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        ```
+      </Step>
+
+      <Step title="Install CockroachDB">
+        ```bash
+        brew install cockroachdb/tap/cockroach
+        ```
+      </Step>
+
+      <Step title="Verify installation">
+        ```bash
+        cockroach version
+        ```
+      </Step>
+    </Steps>
+
+    ### Download the binary
+
+    Alternatively, you can download the CockroachDB binary directly:
+
+    <Steps>
+      <Step title="Download the archive">
+        Visit the [Releases page](https://www.cockroachlabs.com/docs/releases/) and download the CockroachDB archive for your architecture (Intel or ARM).
+      </Step>
+
+      <Step title="Extract and install">
+        Extract the archive and copy the binary to your PATH:
+
+        ```bash
+        tar -xzf cockroach-{VERSION}.darwin-{ARCHITECTURE}.tgz
+        sudo cp -i cockroach-{VERSION}.darwin-{ARCHITECTURE}/cockroach /usr/local/bin/
+        ```
+      </Step>
+
+      <Step title="Install spatial libraries (optional)">
+        If you plan to use CockroachDB's spatial features, install the GEOS libraries:
+
+        ```bash
+        # Create the library directory
+        sudo mkdir -p /usr/local/lib/cockroach
+
+        # Copy the GEOS libraries
+        sudo cp -i cockroach-{VERSION}.darwin-{ARCHITECTURE}/lib/libgeos.dylib /usr/local/lib/cockroach/
+        sudo cp -i cockroach-{VERSION}.darwin-{ARCHITECTURE}/lib/libgeos_c.dylib /usr/local/lib/cockroach/
+        ```
+      </Step>
+
+      <Step title="Verify spatial features">
+        Start a demo cluster and test spatial queries:
+
+        ```bash
+        cockroach demo
+        ```
+
+        In the SQL shell:
+
+        ```sql
+        SELECT ST_IsValid(ST_MakePoint(1,2));
+        ```
+
+        You should see:
+
+        ```
+        st_isvalid
+        --------------
+        true
+        (1 row)
+        ```
+      </Step>
+    </Steps>
+
+    ### Use Docker
+
+    Run CockroachDB in a Docker container:
+
+    ```bash
+    docker pull cockroachdb/cockroach:latest-v25.3
+    ```
+
+    ### Limitations
+
+    <Warning>
+    On macOS ARM systems, spatial features are currently disabled due to code signing issues with GEOS libraries. Use the Intel binary or Docker container if you need spatial features.
+    </Warning>
+  </Tab>
+
+  <Tab title="Linux">
+    ### Download the binary (Recommended)
+
+    The CockroachDB binary for Linux requires `glibc`, `libncurses`, and `tzdata`, which are found by default on nearly all Linux distributions.
+
+    <Steps>
+      <Step title="Download CockroachDB">
+        Visit the [Releases page](https://www.cockroachlabs.com/docs/releases/) and download the archive for your architecture. Replace `{VERSION}` with the version you want (e.g., v25.3.0) and `{ARCHITECTURE}` with `linux-amd64` for Intel or `linux-arm64` for ARM.
+
+        ```bash
+        curl https://binaries.cockroachdb.com/cockroach-{VERSION}.{ARCHITECTURE}.tgz | tar -xz
+        ```
+      </Step>
+
+      <Step title="Install the binary">
+        ```bash
+        sudo cp -i cockroach-{VERSION}.{ARCHITECTURE}/cockroach /usr/local/bin/
+        ```
+      </Step>
+
+      <Step title="Verify installation">
+        ```bash
+        which cockroach
+        cockroach version
+        ```
+      </Step>
+
+      <Step title="Install spatial libraries (optional)">
+        If you plan to use spatial features, install the GEOS libraries:
+
+        ```bash
+        # Create the library directory
+        sudo mkdir -p /usr/local/lib/cockroach
+
+        # Copy the GEOS libraries
+        sudo cp -i cockroach-{VERSION}.{ARCHITECTURE}/lib/libgeos.so /usr/local/lib/cockroach/
+        sudo cp -i cockroach-{VERSION}.{ARCHITECTURE}/lib/libgeos_c.so /usr/local/lib/cockroach/
+        ```
+      </Step>
+
+      <Step title="Verify spatial features">
+        ```bash
+        cockroach demo
+        ```
+
+        In the SQL shell:
+
+        ```sql
+        SELECT ST_IsValid(ST_MakePoint(1,2));
+        ```
+      </Step>
+    </Steps>
+
+    ### Use Docker
+
+    <Warning>
+    Running a stateful application like CockroachDB in Docker is more complex than most Docker use cases. Use Docker only if you're experienced with container orchestration.
+    </Warning>
+
+    Docker images are multi-platform and contain binaries for both Intel and ARM architectures:
+
+    <Steps>
+      <Step title="Install Docker">
+        Install [Docker for Linux](https://docs.docker.com/engine/installation/linux/docker-ce/ubuntu/).
+      </Step>
+
+      <Step title="Verify Docker is running">
+        ```bash
+        docker version
+        ```
+      </Step>
+
+      <Step title="Pull the CockroachDB image">
+        ```bash
+        docker pull cockroachdb/cockroach:latest-v25.3
+        ```
+      </Step>
+    </Steps>
+
+    ### Use Kubernetes
+
+    To orchestrate CockroachDB using Kubernetes:
+
+    - [Orchestrate CockroachDB locally with Minikube](https://www.cockroachlabs.com/docs/stable/orchestrate-a-local-cluster-with-kubernetes.html)
+    - [Orchestrate CockroachDB in a single Kubernetes cluster](https://www.cockroachlabs.com/docs/stable/deploy-cockroachdb-with-kubernetes.html)
+    - [Orchestrate CockroachDB across multiple Kubernetes clusters](https://www.cockroachlabs.com/docs/stable/orchestrate-cockroachdb-with-kubernetes-multi-cluster.html)
+
+    ### ARM limitations
+
+    <Note>
+    CockroachDB on ARM has the following limitations:
+    
+    - Floating point operations may yield different results on ARM than on Intel
+    - In production, all cluster nodes should have identical CPU architecture
+    - Mixed Intel and ARM clusters are supported only during migration
+    </Note>
+
+    ### Build from source
+
+    For advanced users, you can [build CockroachDB from source](https://wiki.crdb.io/wiki/spaces/CRDB/pages/181338446/Getting+and+building+CockroachDB+from+source).
+  </Tab>
+
+  <Tab title="Windows">
+    <Warning>
+    CockroachDB support for Windows is experimental. For production use, deploy on Linux.
+    </Warning>
+
+    ### Download the executable (Recommended)
+
+    <Steps>
+      <Step title="Download CockroachDB">
+        Visit the [Releases page](https://www.cockroachlabs.com/docs/releases/?filters=windows) and download the Windows archive containing `cockroach.exe`.
+      </Step>
+
+      <Step title="Extract the archive">
+        Extract the archive and optionally copy `cockroach.exe` to a directory in your PATH.
+      </Step>
+
+      <Step title="Verify installation">
+        Open PowerShell and run:
+
+        ```powershell
+        cockroach version
+        ```
+      </Step>
+    </Steps>
+
+    ### Use PowerShell script
+
+    Alternatively, use PowerShell to download and install:
+
+    ```powershell
+    $ErrorActionPreference = "Stop";
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12;
+    $ProgressPreference = 'SilentlyContinue';
+    $null = New-Item -Type Directory -Force $env:appdata/cockroach;
+    Invoke-WebRequest -Uri https://binaries.cockroachdb.com/cockroach-{VERSION}.windows-6.2-amd64.zip -OutFile cockroach.zip;
+    Expand-Archive -Force -Path cockroach.zip;
+    Copy-Item -Force "cockroach/cockroach-{VERSION}.windows-6.2-amd64/cockroach.exe" -Destination "C:\Program Files\CockroachDB";
+    $Env:PATH += ";C:\Program Files\CockroachDB"
+    ```
+
+    Replace `{VERSION}` with the version you want to install.
+
+    ### Use Docker
+
+    On Windows, Docker creates a Linux container:
+
+    <Steps>
+      <Step title="Install Docker Desktop">
+        Install [Docker Desktop for Windows](https://docs.docker.com/docker-for-windows/install/). Requires 64-bit Windows 10 Pro and Microsoft Hyper-V.
+      </Step>
+
+      <Step title="Verify Docker">
+        In PowerShell:
+
+        ```powershell
+        docker version
+        ```
+      </Step>
+
+      <Step title="Pull the image">
+        ```powershell
+        docker pull cockroachdb/cockroach:latest-v25.3
+        ```
+      </Step>
+    </Steps>
+
+    ### Use Kubernetes
+
+    To orchestrate CockroachDB with Kubernetes on Windows, see [Orchestrate a local cluster with Kubernetes](https://www.cockroachlabs.com/docs/stable/orchestrate-a-local-cluster-with-kubernetes.html).
+  </Tab>
+</Tabs>
+
+## What's next?
+
+Now that you have CockroachDB installed:
+
+<CardGroup cols={2}>
+  <Card title="Start a local cluster" icon="server" href="/start-local-cluster">
+    Run a multi-node CockroachDB cluster on your local machine
+  </Card>
+  <Card title="Quickstart guide" icon="rocket" href="/quickstart">
+    Get up and running with your first SQL commands
+  </Card>
+  <Card title="Learn CockroachDB SQL" icon="book" href="https://www.cockroachlabs.com/docs/stable/learn-cockroachdb-sql.html">
+    Learn the SQL dialect used by CockroachDB
+  </Card>
+  <Card title="Build a sample app" icon="code" href="https://www.cockroachlabs.com/docs/stable/example-apps.html">
+    Connect your application to CockroachDB
+  </Card>
+</CardGroup>

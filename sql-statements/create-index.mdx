@@ -1,0 +1,186 @@
+---
+title: CREATE INDEX
+description: Create an index for a table to improve database performance with the CREATE INDEX statement.
+---
+
+The `CREATE INDEX` statement creates an index for a table. Indexes improve your database's performance by helping SQL locate data without having to look through every row of a table.
+
+Indexes are automatically created for a table's `PRIMARY KEY` and `UNIQUE` columns.
+
+## Required privileges
+
+You must have the `CREATE` privilege on the table.
+
+## Syntax
+
+```sql
+CREATE [UNIQUE | INVERTED] INDEX [IF NOT EXISTS] [index_name]
+  ON table_name (column_name [ASC | DESC] [, ...])
+  [STORING (column_name [, ...])]
+  [WHERE predicate]
+```
+
+## Parameters
+
+<ParamField path="UNIQUE" type="keyword">
+  Apply the `UNIQUE` constraint to the indexed columns.
+  
+  This causes the system to check for existing duplicate values on index creation. It also applies the `UNIQUE` constraint at the table level, so the system checks for duplicate values when inserting or updating data.
+</ParamField>
+
+<ParamField path="INVERTED" type="keyword">
+  Create a GIN index on schemaless data in a `JSONB` column.
+  
+  You can also use the PostgreSQL-compatible syntax `USING GIN`.
+</ParamField>
+
+<ParamField path="VECTOR" type="keyword">
+  Create a vector index on a `VECTOR` column.
+</ParamField>
+
+<ParamField path="IF NOT EXISTS" type="keyword">
+  Create a new index only if an index of the same name does not already exist. If one does exist, do not return an error.
+</ParamField>
+
+<ParamField path="index_name" type="identifier">
+  The name of the index to create, which must be unique to its table.
+  
+  If you do not specify a name, CockroachDB uses the format `<table>_<columns>_key/idx`. `key` indicates the index applies the `UNIQUE` constraint; `idx` indicates it does not.
+</ParamField>
+
+<ParamField path="table_name" type="identifier">
+  The name of the table you want to create the index on.
+</ParamField>
+
+<ParamField path="column_name" type="identifier">
+  The name of the column you want to index.
+</ParamField>
+
+<ParamField path="ASC | DESC" type="keyword">
+  Sort the column in ascending (`ASC`) or descending (`DESC`) order in the index. How columns are sorted affects query results, particularly when using `LIMIT`.
+  
+  Default: `ASC`
+</ParamField>
+
+<ParamField path="STORING" type="column_list">
+  Store (but do not sort) each column whose name you include.
+  
+  Note: Columns that are part of a table's `PRIMARY KEY` cannot be specified as `STORING` columns in secondary indexes on the table.
+  
+  `COVERING` and `INCLUDE` are aliases for `STORING` and work identically.
+</ParamField>
+
+<ParamField path="WHERE" type="predicate">
+  An optional `WHERE` clause that defines the predicate boolean expression of a partial index.
+</ParamField>
+
+## Examples
+
+### Create standard indexes
+
+#### Single-column indexes
+
+Single-column indexes sort the values of a single column:
+
+```sql
+CREATE INDEX ON users (name);
+```
+
+Because each query can only use one index, single-column indexes are not typically as useful as multiple-column indexes.
+
+#### Multiple-column indexes
+
+Multiple-column indexes sort columns in the order you list them:
+
+```sql
+CREATE INDEX ON users (name, city);
+```
+
+#### Unique indexes
+
+Unique indexes do not allow duplicate values among their columns:
+
+```sql
+CREATE UNIQUE INDEX ON users (name, id);
+```
+
+This also applies the `UNIQUE` constraint at the table level.
+
+### Create GIN indexes
+
+You can create GIN indexes on schemaless data in a `JSONB` column:
+
+```sql
+CREATE INDEX ON promo_codes USING GIN (rules);
+```
+
+The following syntax is equivalent:
+
+```sql
+CREATE INVERTED INDEX ON promo_codes (rules);
+```
+
+### Create trigram indexes
+
+You can create trigram indexes on `STRING` columns:
+
+```sql
+CREATE INDEX ON rides USING GIN (vehicle_city gin_trgm_ops);
+```
+
+The following syntax is equivalent:
+
+```sql
+CREATE INVERTED INDEX ON rides(vehicle_city gin_trgm_ops);
+```
+
+### Create spatial indexes
+
+You can create spatial indexes on `GEOMETRY` and `GEOGRAPHY` columns:
+
+```sql
+CREATE INDEX geom_idx_1 ON some_spatial_table USING GIST(geom);
+```
+
+With tuning parameters:
+
+```sql
+CREATE INDEX geom_idx_2
+  ON some_spatial_table USING GIST(geom)
+  WITH (s2_max_cells = 20, s2_max_level = 12, s2_level_mod = 3);
+```
+
+### Store columns
+
+Storing a column improves the performance of queries that retrieve (but do not filter) its values:
+
+```sql
+CREATE INDEX ON users (city) STORING (name);
+```
+
+However, to use stored columns, queries must filter another column in the same index.
+
+### Change column sort order
+
+To sort columns in descending order, you must explicitly set the option:
+
+```sql
+CREATE INDEX ON users (city DESC, name);
+```
+
+How a column is ordered in the index will affect the ordering of the index keys.
+
+### Query specific indexes
+
+Normally, CockroachDB selects the index that it calculates will scan the fewest rows. However, you can override that selection:
+
+```sql
+SELECT name FROM users@users_name_idx WHERE city='new york';
+```
+
+## See also
+
+- SHOW INDEX
+- DROP INDEX
+- ALTER INDEX
+- SHOW JOBS

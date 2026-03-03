@@ -1,0 +1,127 @@
+---
+title: CockroachDB Cloud Overview
+description: Learn about CockroachDB Cloud, a fully-managed service that simplifies deployment and management of CockroachDB clusters.
+---
+
+CockroachDB Cloud is a fully-managed service run by Cockroach Labs that simplifies the deployment and management of CockroachDB. This page provides an introduction to CockroachDB Cloud and an overview of each cluster plan: CockroachDB Standard, CockroachDB Basic, and CockroachDB Advanced.
+
+## What is CockroachDB Cloud?
+
+CockroachDB Cloud is a fully-managed distributed SQL database service that provides:
+
+- Automated deployment and scaling
+- Built-in monitoring and alerting
+- Managed backups and recovery
+- Enterprise-grade security
+- Global distribution with multi-region support
+
+To get started, you can [sign up for a CockroachDB Cloud account](https://cockroachlabs.cloud) and create a cluster using trial credits.
+
+## Available Plans
+
+When you create a cluster in CockroachDB Cloud, you select its plan. A CockroachDB Cloud organization can include clusters of each plan. This section provides an overview of each plan.
+
+<CardGroup cols={3}>
+  <Card title="CockroachDB Basic" icon="rocket">
+    Usage-based pricing ideal for smaller organizations or trial evaluations of CockroachDB.
+  </Card>
+  
+  <Card title="CockroachDB Standard" icon="gauge-high">
+    Pre-provisioned compute with usage-based storage. The Standard plan is currently in Preview.
+  </Card>
+  
+  <Card title="CockroachDB Advanced" icon="shield">
+    Fully pre-provisioned with additional security and compliance features.
+  </Card>
+</CardGroup>
+
+### Plan Comparison
+
+| Feature | Basic | Standard | Advanced |
+|---------|-------|----------|----------|
+| **Pricing Model** | Usage-based (Request Units) | Provisioned compute + usage-based storage | Fully provisioned |
+| **Cloud Providers** | AWS, GCP, Azure | AWS, GCP | AWS, GCP, Azure |
+| **Multi-Region** | Yes | Yes | Yes |
+| **Private Connectivity** | No | Yes (AWS PrivateLink, GCP PSC) | Yes (All options) |
+| **CMEK** | No | No | Yes |
+| **Advanced Security** | No | No | Optional add-on |
+| **PCI DSS Compliance** | No | No | Yes (with security add-on) |
+| **DB Console Access** | No | No | Yes |
+
+## Key Features
+
+### Fully Managed
+
+CockroachDB Cloud handles all operational tasks including:
+
+- Cluster provisioning and configuration
+- Software updates and patches
+- Automated backups
+- Performance monitoring
+- Security management
+
+### Global Distribution
+
+Deploy clusters across multiple regions and cloud providers for:
+
+- Low-latency access for global users
+- High availability and disaster recovery
+- Data locality compliance
+
+### Enterprise Security
+
+CockroachDB Cloud provides enterprise-grade security features:
+
+- Encryption at rest and in transit
+- Network isolation and IP allowlisting
+- Private connectivity options
+- Customer-managed encryption keys (CMEK) for Advanced clusters
+- SOC 2 Type 2, PCI DSS, and HIPAA compliance
+
+### Automatic Scaling
+
+Scale your clusters to meet changing demands:
+
+- **Basic**: Automatic scaling based on usage
+- **Standard**: Adjust provisioned capacity as needed
+- **Advanced**: Add or remove nodes and adjust storage
+
+## Getting Started
+
+<Steps>
+  <Step title="Create an Account">
+    Sign up for a free CockroachDB Cloud account at [cockroachlabs.cloud](https://cockroachlabs.cloud).
+  </Step>
+  
+  <Step title="Choose a Plan">
+    Select the plan that best fits your needs: Basic, Standard, or Advanced.
+  </Step>
+  
+  <Step title="Create a Cluster">
+    Configure your cluster by selecting cloud provider, regions, and capacity.
+  </Step>
+  
+  <Step title="Connect and Build">
+    Connect your applications and start building with CockroachDB.
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/cloud/quickstart">
+    Get started with a free trial cluster
+  </Card>
+  
+  <Card title="Create a Cluster" icon="server" href="/cloud/create-cluster">
+    Learn how to create your first cluster
+  </Card>
+  
+  <Card title="Pricing" icon="dollar-sign" href="/cloud/pricing">
+    Understand CockroachDB Cloud costs
+  </Card>
+  
+  <Card title="Plan Comparison" icon="table" href="/cloud/plan-comparison">
+    Compare plans in detail
+  </Card>
+</CardGroup>

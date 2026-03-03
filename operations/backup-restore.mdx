@@ -1,0 +1,303 @@
+---
+title: Backup and Restore Operations
+description: Learn how to back up and restore your CockroachDB cluster to cloud storage services
+---
+
+CockroachDB's backup and restore features allow you to create consistent backups of your cluster's schema and data for disaster recovery. You can back up full clusters, databases, or individual tables to cloud storage services like AWS S3, Google Cloud Storage, or Azure Storage.
+
+## Overview
+
+Backups are designed primarily for disaster recovery when your cluster loses a majority of its nodes. CockroachDB is built to be fault-tolerant with automatic recovery, but regular backups are an essential part of a robust disaster recovery plan.
+
+<Note>
+Scheduled backups ensure that data is protected from garbage collection until successfully backed up. This active management means you can run backups at a cadence independent from the GC TTL of the data.
+</Note>
+
+## Creating Backups
+
+<Steps>
+
+<Step title="Choose backup scope">
+You can back up different scopes depending on your needs:
+
+- **Full cluster**: Includes all databases, tables, views, scheduled jobs, and relevant system tables
+- **Database**: Includes all tables and views in the database
+- **Table**: Includes the table with its indexes and views
+
+<CodeBlock>
+```sql
+-- Back up entire cluster
+BACKUP INTO 'external://backup_s3' AS OF SYSTEM TIME '-10s';
+
+-- Back up a database
+BACKUP DATABASE bank INTO 'external://backup_s3' AS OF SYSTEM TIME '-10s';
+
+-- Back up specific tables
+BACKUP bank.customers, bank.accounts INTO 'external://backup_s3' AS OF SYSTEM TIME '-10s';
+```
+</CodeBlock>
+
+<Tip>
+Always start backups with a timestamp at least 10 seconds in the past using `AS OF SYSTEM TIME '-10s'` to improve performance and decrease likelihood of transaction contention.
+</Tip>
+</Step>
+
+<Step title="Configure storage location">
+Backups require a storage URI pointing to cloud storage:
+
+- **AWS S3**: `s3://{bucket}/{path}?AWS_ACCESS_KEY_ID={key}&AWS_SECRET_ACCESS_KEY={secret}`
+- **Google Cloud Storage**: `gs://{bucket}/{path}?AUTH=specified`
+- **Azure Storage**: `azure://{container}/{path}?AZURE_ACCOUNT_NAME={account}&AZURE_ACCOUNT_KEY={key}`
+
+<Warning>
+Modifying backup files in storage could invalidate the backup and prevent restore. Enable object locking in your cloud storage bucket to protect backup integrity.
+</Warning>
+</Step>
+
+<Step title="Create incremental backups">
+Incremental backups capture only the changes since the last backup:
+
+<CodeBlock>
+```sql
+-- Create full backup
+BACKUP INTO 'external://backup_s3' AS OF SYSTEM TIME '-10s';
+
+-- Add incremental backup to latest full backup
+BACKUP INTO LATEST IN 'external://backup_s3' AS OF SYSTEM TIME '-10s';
+```
+</CodeBlock>
+
+Incremental backups are stored in the backup collection and appended to the most recent full backup.
+</Step>
+
+</Steps>
+
+## Scheduled Backups
+
+Create automated backup schedules for regular protection:
+
+<CodeBlock>
+```sql
+-- Schedule daily full backups and hourly incremental backups
+CREATE SCHEDULE daily_backup
+  FOR BACKUP INTO 'external://backup_s3'
+  RECURRING '@daily'
+  FULL BACKUP ALWAYS
+  WITH SCHEDULE OPTIONS first_run = 'now';
+
+CREATE SCHEDULE hourly_incremental
+  FOR BACKUP INTO 'external://backup_s3'
+  RECURRING '@hourly'
+  WITH SCHEDULE OPTIONS first_run = 'now';
+```
+</CodeBlock>
+
+### Manage backup schedules
+
+<CodeBlock>
+```sql
+-- View schedules
+SHOW SCHEDULES;
+
+-- Pause a schedule
+PAUSE SCHEDULE 123456;
+
+-- Resume a schedule
+RESUME SCHEDULE 123456;
+
+-- Drop a schedule
+DROP SCHEDULE 123456;
+```
+</CodeBlock>
+
+## Restoring from Backups
+
+<Steps>
+
+<Step title="Identify backup location">
+View available backups in your collection:
+
+<CodeBlock>
+```sql
+-- List backups in collection
+SHOW BACKUPS IN 'external://backup_s3';
+
+-- Show backup details
+SHOW BACKUP FROM LATEST IN 'external://backup_s3';
+```
+</CodeBlock>
+</Step>
+
+<Step title="Restore cluster, database, or tables">
+
+<Accordion title="Full cluster restore">
+Full cluster restores can only run on a destination cluster with no user-created databases or tables:
+
+<CodeBlock>
+```sql
+RESTORE FROM LATEST IN 'external://backup_s3';
+```
+</CodeBlock>
+
+<Warning>
+When a cluster is in a mixed-version state during an upgrade, a full cluster restore will fail. You must finalize the upgrade first.
+</Warning>
+</Accordion>
+
+<Accordion title="Database restore">
+<CodeBlock>
+```sql
+-- Restore database
+RESTORE DATABASE bank FROM LATEST IN 'external://backup_s3';
+
+-- Restore with new name
+RESTORE DATABASE bank FROM LATEST IN 'external://backup_s3'
+  WITH new_db_name = 'bank_restored';
+```
+</CodeBlock>
+</Accordion>
+
+<Accordion title="Table restore">
+<CodeBlock>
+```sql
+-- Restore tables to original database
+RESTORE bank.customers, bank.accounts FROM LATEST IN 'external://backup_s3';
+
+-- Restore tables to different database
+RESTORE bank.customers FROM LATEST IN 'external://backup_s3'
+  WITH into_db = 'newdb';
+```
+</CodeBlock>
+</Accordion>
+</Step>
+
+<Step title="Restore with options">
+Control restore behavior with additional options:
+
+<CodeBlock>
+```sql
+-- Restore asynchronously
+RESTORE DATABASE bank FROM LATEST IN 'external://backup_s3'
+  WITH DETACHED;
+
+-- Restore from specific point in time (requires revision_history)
+RESTORE DATABASE bank FROM LATEST IN 'external://backup_s3'
+  AS OF SYSTEM TIME '2024-03-01 10:00:00';
+
+-- Skip missing foreign keys
+RESTORE bank.accounts FROM LATEST IN 'external://backup_s3'
+  WITH skip_missing_foreign_keys;
+```
+</CodeBlock>
+</Step>
+
+</Steps>
+
+## Backup Validation
+
+Verify your backups are restorable without performing a full restore:
+
+<CodeBlock>
+```sql
+-- Verify backup schema only
+RESTORE DATABASE bank FROM LATEST IN 'external://backup_s3'
+  WITH schema_only;
+
+-- Verify backup data integrity
+RESTORE DATABASE bank FROM LATEST IN 'external://backup_s3'
+  WITH schema_only, verify_backup_table_data;
+```
+</CodeBlock>
+
+## Backup Performance
+
+The backup process minimizes cluster performance impact through:
+
+- **Even work distribution**: Backup work is distributed across nodes with range replicas
+- **Elastic CPU limiting**: Integration with the elastic CPU limiter prevents backups from overwhelming foreground traffic
+- **Configurable file sizes**: Control backup file sizes with the `bulkio.backup.file_size` cluster setting (default 128 MiB)
+
+### Monitor backup jobs
+
+<CodeBlock>
+```sql
+-- View running backup jobs
+SHOW JOBS SELECT * FROM [SHOW JOBS] WHERE job_type = 'BACKUP';
+
+-- View specific job status
+SHOW JOB 123456789;
+
+-- Control backup jobs
+PAUSE JOB 123456789;
+RESUME JOB 123456789;
+CANCEL JOB 123456789;
+```
+</CodeBlock>
+
+## Required Privileges
+
+Backup and restore operations require specific privileges:
+
+| Operation | Privilege Required |
+|-----------|-------------------|
+| Full cluster backup | `admin` role membership |
+| Database backup | `BACKUP` privilege on database |
+| Table backup | `SELECT` privilege on tables |
+| Full cluster restore | `admin` role or system-level `RESTORE` privilege |
+| Database restore | System-level `RESTORE` privilege |
+| Table restore | Database-level `RESTORE` privilege |
+
+<CodeBlock>
+```sql
+-- Grant system-level restore privilege
+GRANT SYSTEM RESTORE TO user;
+
+-- Grant database-level restore privilege
+GRANT RESTORE ON DATABASE bank TO user;
+```
+</CodeBlock>
+
+## Best Practices
+
+<Accordion title="Storage considerations">
+- Enable object locking in cloud storage buckets to prevent backup tampering
+- Use separate storage locations for different backup collections
+- Test restores regularly to ensure backup validity
+- Monitor backup job completion and storage utilization
+</Accordion>
+
+<Accordion title="Backup strategy">
+- Schedule automated backups with appropriate frequency for your RPO requirements
+- Combine full and incremental backups to optimize storage and backup time
+- Use revision history for point-in-time recovery capabilities
+- Store backups in multiple regions for additional disaster recovery protection
+</Accordion>
+
+<Accordion title="Security">
+- Use encrypted backups with KMS or passphrases for sensitive data
+- Restrict access to backup storage using IAM roles and policies
+- Audit backup and restore operations using SQL audit logging
+- Exclude sensitive table data using `exclude_data_from_backup` parameter
+</Accordion>
+
+## Troubleshooting
+
+### Common issues
+
+<Accordion title="Backup fails with 'transaction deadline exceeded'">
+This error indicates the backup is taking too long. Consider:
+- Using `DETACHED` option for asynchronous execution
+- Breaking large backups into smaller database or table backups
+- Increasing the `gc.ttlseconds` replication zone setting
+</Accordion>
+
+<Accordion title="Restore fails with 'table already exists'">
+The destination database contains tables with the same names. You can:
+- Drop existing tables before restoring
+- Use `new_db_name` option to restore to a different database
+- Use `into_db` option for table restores
+</Accordion>
+
+<Accordion title="Cannot restore multi-region backup to single-region cluster">
+Multi-region backups cannot be restored to single-region clusters. Use `skip_localities_check` option only if you understand the implications, or create a multi-region destination cluster.
+</Accordion>

@@ -1,0 +1,194 @@
+---
+title: API Authentication
+description: Authenticate your requests to the CockroachDB Cloud API using bearer tokens
+---
+
+The CockroachDB Cloud API uses bearer token authentication. Each request requires a secret key associated with a service account that inherits the account's permissions.
+
+## Creating API Keys
+
+To create an API key:
+
+1. Navigate to the [CockroachDB Cloud Console](https://cockroachlabs.cloud/)
+2. Go to **Organization Settings** > **API Access**
+3. Click **Create API Key**
+4. Select a service account or create a new one
+5. Assign appropriate roles to the service account
+6. Copy and securely store the generated secret key
+
+<Warning>
+The secret key is only displayed once during creation. Store it securely - you cannot retrieve it later. If lost, you must create a new API key.
+</Warning>
+
+## Service Account Roles
+
+Service accounts can be assigned the following roles:
+
+<ParamField path="Cluster Admin" type="role">
+  Full access to all cluster operations, including create, update, delete, and billing
+</ParamField>
+
+<ParamField path="Cluster Creator" type="role">
+  Can create and delete clusters, but cannot modify existing clusters
+</ParamField>
+
+<ParamField path="Cluster Developer" type="role">
+  Can view and modify existing clusters, but cannot create or delete them
+</ParamField>
+
+<ParamField path="Cluster Operator" type="role">
+  Can manage cluster maintenance windows and operational settings
+</ParamField>
+
+<ParamField path="Billing Coordinator" type="role">
+  Can view invoices and billing information
+</ParamField>
+
+## Making Authenticated Requests
+
+Include your secret key in the `Authorization` header using the Bearer authentication scheme:
+
+```bash curl
+curl --request GET \
+  --url https://cockroachlabs.cloud/api/v1/clusters \
+  --header "Authorization: Bearer {secret_key}"
+```
+
+```bash With API Version
+curl --request GET \
+  --url https://cockroachlabs.cloud/api/v1/clusters \
+  --header "Authorization: Bearer {secret_key}" \
+  --header "Cc-Version: 2024-09-16"
+```
+
+Replace `{secret_key}` with your actual API secret key.
+
+## Authentication Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+  
+  Format: `Bearer {secret_key}`
+</ParamField>
+
+<ParamField header="Cc-Version" type="string">
+  API version in YYYY-MM-DD format (e.g., `2024-09-16`)
+  
+  <Tip>Always specify this header to ensure API stability</Tip>
+</ParamField>
+
+<ParamField header="Content-Type" type="string">
+  Media type of the request body (e.g., `application/json`)
+  
+  Required for POST, PUT, and PATCH requests
+</ParamField>
+
+## Authentication Errors
+
+### 401 Unauthorized
+
+Occurs when:
+- The secret key is missing or invalid
+- The secret key has been revoked
+- The service account has been deleted
+
+```json Response Example
+{
+  "code": 16,
+  "message": "unauthenticated",
+  "details": []
+}
+```
+
+### 403 Forbidden
+
+Occurs when:
+- The service account lacks required permissions
+- The requested resource is not accessible
+
+```json Response Example
+{
+  "code": 7,
+  "message": "permission denied",
+  "details": []
+}
+```
+
+### 429 Rate Limited
+
+Occurs when you exceed 10 requests per second:
+
+```json Response Example
+{
+  "code": 8,
+  "message": "rate limit exceeded",
+  "details": []
+}
+```
+
+The response includes a `Retry-After` header indicating when you can retry the request.
+
+## Security Best Practices
+
+<Steps>
+  <Step title="Store Keys Securely">
+    Never commit API keys to version control. Use environment variables or secret management systems.
+    
+    ```bash
+    export COCKROACH_API_KEY="your-secret-key-here"
+    ```
+  </Step>
+  
+  <Step title="Use Least Privilege">
+    Assign service accounts the minimum permissions required for their tasks.
+  </Step>
+  
+  <Step title="Rotate Keys Regularly">
+    Create new API keys periodically and revoke old ones.
+  </Step>
+  
+  <Step title="Monitor API Usage">
+    Track API calls through audit logs to detect unauthorized access.
+  </Step>
+</Steps>
+
+## Example: Complete Authenticated Request
+
+Here's a complete example of an authenticated request to list all clusters:
+
+```bash
+curl --request GET \
+  --url 'https://cockroachlabs.cloud/api/v1/clusters' \
+  --header 'Authorization: Bearer CC0eJzA1xwg2p9a5CrDB4kLmNoPQRsT7uvWXYZ...' \
+  --header 'Cc-Version: 2024-09-16' \
+  --header 'Accept: application/json'
+```
+
+```json Success Response
+{
+  "clusters": [
+    {
+      "id": "f9b6f5e4-3c2b-4a1d-9e8f-7c6b5a4d3e2f",
+      "name": "production-cluster",
+      "plan": "STANDARD",
+      "provider": "GCP",
+      "state": "CREATED"
+    }
+  ],
+  "pagination": null
+}
+```
+
+## Testing Your Authentication
+
+To verify your API key is working correctly, make a simple GET request:
+
+```bash Test Authentication
+curl --request GET \
+  --url https://cockroachlabs.cloud/api/v1/clusters \
+  --header "Authorization: Bearer {secret_key}" \
+  --header "Cc-Version: 2024-09-16" \
+  --verbose
+```
+
+A successful response (HTTP 200) confirms your authentication is configured correctly.

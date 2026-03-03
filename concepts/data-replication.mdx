@@ -1,0 +1,310 @@
+---
+title: Data Replication
+description: Understand how CockroachDB replicates and distributes data across your cluster for high availability
+---
+
+CockroachDB automatically replicates your data across multiple nodes to ensure high availability. When nodes fail or become unavailable, your cluster continues serving requests without data loss or downtime.
+
+## Replication Fundamentals
+
+CockroachDB divides your data into **ranges**—contiguous chunks of the key-value space, typically 512 MiB by default. Each range is replicated across multiple nodes to ensure survivability.
+
+<Info>
+From a SQL perspective, a table starts as a single range. As the table grows beyond the maximum range size, it automatically splits into multiple ranges. Each range is then independently replicated and distributed.
+</Info>
+
+### Default Replication
+
+By default, CockroachDB uses **3x replication**:
+
+- Each range is copied to 3 different nodes
+- Changes must be acknowledged by a majority (2 out of 3)
+- The cluster can tolerate 1 node failure
+- This provides the minimum configuration for high availability
+
+The number of failures you can tolerate follows this formula:
+
+```
+Max failures = (Replication factor - 1) / 2
+```
+
+| Replication Factor | Failures Tolerated | Minimum Nodes |
+|--------------------|--------------------|--------------|
+| 3 | 1 | 3 |
+| 5 | 2 | 5 |
+| 7 | 3 | 7 |
+
+## Raft Consensus Protocol
+
+CockroachDB uses the Raft consensus algorithm to ensure all replicas agree on the current state of data.
+
+### Raft Groups and Roles
+
+Each range forms a **Raft group** with replicas that have specific roles:
+
+<Steps>
+  <Step title="Leader">
+    One replica is elected as the Raft leader. The leader:
+    - Proposes all writes to the group
+    - Coordinates replication to followers
+    - Maintains the Raft log
+    - Is always co-located with the leaseholder (via Leader leases)
+  </Step>
+  
+  <Step title="Followers">
+    The remaining voting replicas act as followers. They:
+    - Receive and acknowledge proposed writes
+    - Maintain copies of the Raft log
+    - Can become leader if the current leader fails
+    - Participate in leader elections
+  </Step>
+  
+  <Step title="Non-Voting Replicas (Optional)">
+    Additional replicas that don't participate in consensus:
+    - Follow the Raft log for data consistency
+    - Serve follower reads without affecting write latency
+    - Don't vote in leader elections
+    - Ideal for multi-region read replicas
+  </Step>
+</Steps>
+
+### How Consensus Works
+
+When you write data:
+
+1. The client sends the write to any node (the gateway)
+2. The gateway routes it to the range's leaseholder
+3. The leaseholder (also the Raft leader) proposes the write
+4. Followers acknowledge the proposed write
+5. Once a majority acknowledges, the write is committed
+6. The committed write is applied to the storage engine
+
+<Note>
+A **majority** (quorum) is required for writes to commit. With 3x replication, this means 2 out of 3 replicas must acknowledge. This ensures the write survives even if one node fails immediately after.
+</Note>
+
+## Leases and Read Performance
+
+### Leaseholder Replicas
+
+Each range has one **leaseholder**—a special replica that:
+
+- Serves all reads for the range without going through Raft consensus
+- Coordinates all writes as the Raft leader
+- Can serve reads with minimal latency
+- Maintains the timestamp cache to ensure serializability
+
+<Info>
+Leaseholders can serve strongly-consistent reads without Raft because they must have participated in the consensus that committed the data in the first place. This eliminates unnecessary network round trips.
+</Info>
+
+### Leader Leases
+
+CockroachDB uses **Leader leases** to ensure the Raft leader and leaseholder are always the same replica:
+
+- Leases are based on store-level liveness detection
+- A replica must be fortified by a quorum of stores to become leader
+- The fortified leader automatically gets the lease
+- This eliminates the single point of failure from the previous node liveness system
+
+**Benefits of Leader leases**:
+- Network partitions heal in less than 20 seconds
+- Liveness failures resolved in less than 1 second  
+- No dependency on a single node liveness range
+- Equivalent performance to the previous epoch-based lease system
+
+### Follower Reads
+
+Non-leaseholder replicas can serve **follower reads** (also called stale reads):
+
+- Use the `AS OF SYSTEM TIME` clause to read historical data
+- Reads are served at a timestamp below the range's closed timestamp
+- No need to contact the leaseholder, reducing latency
+- Perfect for geo-distributed reads in multi-region deployments
+
+```sql
+-- Read data as it existed 5 seconds ago from any replica
+SELECT * FROM orders 
+AS OF SYSTEM TIME '-5s';
+```
+
+<Tip>
+Follower reads are particularly useful in multi-region clusters where reading from a nearby replica can dramatically reduce latency compared to reading from a distant leaseholder.
+</Tip>
+
+## Rebalancing and Range Distribution
+
+CockroachDB automatically rebalances data across your cluster to optimize performance and survivability.
+
+### When Rebalancing Occurs
+
+<Accordion title="New Nodes Join">
+When you add nodes to your cluster:
+
+1. New nodes advertise their available capacity
+2. The cluster identifies ranges to rebalance
+3. Snapshots of ranges are sent to new nodes
+4. New replicas join their Raft groups
+5. Old replicas are removed once new ones are up-to-date
+</Accordion>
+
+<Accordion title="Nodes Go Offline">
+When nodes become unavailable:
+
+1. After a timeout, the cluster considers the node dead
+2. Ranges with replicas on the dead node are under-replicated
+3. New replicas are created on available nodes
+4. Once replication is restored, the cluster is healthy again
+</Accordion>
+
+<Accordion title="Load-Based Rebalancing">
+The cluster continuously monitors:
+
+- Replica count per node
+- CPU usage per node (configurable)
+- Query patterns and hotspots
+
+It automatically rebalances to distribute load evenly.
+</Accordion>
+
+### Snapshots and Replica Creation
+
+To create a new replica:
+
+1. The leaseholder creates a snapshot of the range's data
+2. The snapshot is sent to the target node (possibly via delegated snapshots)
+3. The receiving node loads the snapshot into its storage engine
+4. The new replica replays the Raft log from the snapshot timestamp to present
+5. The replica joins the Raft group and begins participating
+
+<Note>
+**Delegated snapshots** allow a follower close to the recipient to send the snapshot instead of the leader. This reduces cross-region bandwidth costs and speeds up rebalancing in multi-region deployments.
+</Note>
+
+## Replication Zones
+
+You control replication behavior through **replication zones**—configurations that specify:
+
+- Number of replicas (replication factor)
+- Number of voting vs. non-voting replicas
+- Placement constraints (e.g., "must be in EU")
+- Leaseholder preferences (e.g., "prefer region=us-east")
+- Range size limits
+- Garbage collection TTL
+
+### Zone Configuration Levels
+
+Replication zones can be configured at multiple levels:
+
+| Level | Scope | Example Use Case |
+|-------|-------|------------------|
+| **Cluster** | All data by default | Set 5x replication globally |
+| **Database** | All tables in a database | Keep `eu_db` data in Europe |
+| **Table** | Specific table | High replication for critical `payments` table |
+| **Index** | Specific index | Co-locate index with related data |
+| **Partition** | Specific rows | Pin user data to their home region |
+
+<Warning>
+Manual zone configuration is powerful but complex. For multi-region deployments, use the high-level [Multi-Region SQL features](/concepts/multi-region) instead of configuring zones manually.
+</Warning>
+
+### Example: Pin Data to a Region
+
+```sql
+-- Create a database with data pinned to us-east
+CREATE DATABASE mydb;
+
+ALTER DATABASE mydb CONFIGURE ZONE USING 
+  constraints = '[+region=us-east]',
+  lease_preferences = '[[+region=us-east]]';
+```
+
+This ensures:
+- All replicas are in `us-east`
+- The leaseholder is preferably in `us-east`
+- Reads and writes are low-latency for `us-east` users
+
+## Leaseholder Rebalancing (Follow-the-Workload)
+
+CockroachDB can automatically move leaseholders to be closer to the primary source of traffic:
+
+### How It Works
+
+1. Each leaseholder tracks which localities are requesting the range
+2. Every 10 minutes (by default), it evaluates whether to transfer the lease
+3. It considers:
+   - Request counts from each locality
+   - Latency between localities
+   - Current lease distribution
+4. If transferring improves latency, the lease moves
+
+### Intra-Locality vs. Inter-Locality
+
+<Accordion title="Same Locality">
+When all replicas are in the same locality:
+
+- Leases are balanced evenly across nodes
+- Small deviations are tolerated to prevent thrashing
+- Based purely on lease count per node
+</Accordion>
+
+<Accordion title="Different Localities">
+When replicas span localities:
+
+- CockroachDB calculates which locality is requesting most
+- It correlates request localities with replica localities
+- Leases move to replicas in localities with the most requests
+- This optimizes for the primary traffic source
+</Accordion>
+
+<Tip>
+This **Follow-the-Workload** feature automatically optimizes read latency as your traffic patterns shift throughout the day—no manual intervention needed.
+</Tip>
+
+## Handling Failures
+
+### Automatic Failure Detection
+
+CockroachDB detects failures through:
+
+- **Store liveness**: Continuous heartbeating between stores
+- **Raft heartbeats**: Leaders heartbeat followers periodically
+- **Circuit breakers**: Per-replica timeouts (60 seconds by default)
+
+When a replica becomes unavailable, its circuit breaker trips and returns errors quickly rather than hanging indefinitely.
+
+### Recovery Process
+
+When a node fails:
+
+<Steps>
+  <Step title="Failure Detection">
+    Store liveness detects the node is unresponsive (typically within seconds).
+  </Step>
+  
+  <Step title="Leader Election">
+    If the failed node was a Raft leader, followers hold an election for a new leader.
+  </Step>
+  
+  <Step title="Lease Transfer">
+    The new Raft leader acquires the lease and begins serving requests.
+  </Step>
+  
+  <Step title="Cluster Operations Resume">
+    Requests continue with the remaining replicas. The cluster is temporarily at reduced replication (e.g., 2 of 3 replicas).
+  </Step>
+  
+  <Step title="Rebalancing">
+    After a timeout, new replicas are created on healthy nodes to restore the replication factor.
+  </Step>
+</Steps>
+
+<Info>
+The entire recovery process—from failure detection to serving requests again—typically completes in seconds, not minutes.
+</Info>
+
+## See Also
+
+- [Distributed Transactions](/concepts/distributed-transactions) - How transactions work across replicas
+- [Multi-Region Deployments](/concepts/multi-region) - Optimizing replication for geo-distributed data
+- [Resilience and Recovery](/concepts/resilience-recovery) - Backup strategies and disaster recovery

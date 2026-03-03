@@ -1,0 +1,307 @@
+---
+title: GRANT
+description: Grant user privileges and role membership with the GRANT statement.
+---
+
+The `GRANT` statement controls each role or user's SQL privileges for interacting with specific databases, schemas, tables, or user-defined types. For privileges required by specific statements, see the documentation for the respective SQL statement.
+
+You can use `GRANT` to directly grant privileges to a role or user, or you can grant membership to an existing role, which grants that role's privileges to the grantee. Users granted a privilege with `WITH GRANT OPTION` can in turn grant that privilege to others. The owner of an object implicitly has the `GRANT OPTION` for all privileges, and the `GRANT OPTION` is inherited through role memberships.
+
+For new databases, users with the following roles are automatically granted the `ALL` privilege:
+- Every user who is part of the `admin` role (including the `root` user)
+- Every user who is part of the `owner` role for the new database
+
+## Syntax
+
+```sql
+GRANT {ALL [PRIVILEGES] | privilege_list} 
+  ON {DATABASE | SCHEMA | TABLE | TYPE | FUNCTION | EXTERNAL CONNECTION} target [, ...]
+  TO role_spec [, ...]
+  [WITH GRANT OPTION]
+```
+
+```sql
+GRANT {role_name [, ...]} TO {role_spec [, ...]} [WITH ADMIN OPTION]
+```
+
+## Parameters
+
+<ParamField path="ALL | ALL PRIVILEGES" type="keyword">
+  Grant all privileges.
+</ParamField>
+
+<ParamField path="privilege_list" type="list">
+  A comma-separated list of privileges to grant. For guidelines, see Managing privileges.
+  
+  Supported privileges include:
+  - `SELECT` - Read data from a table
+  - `INSERT` - Insert data into a table
+  - `UPDATE` - Update data in a table  
+  - `DELETE` - Delete data from a table
+  - `CREATE` - Create objects in a database or schema
+  - `DROP` - Drop objects from a database
+  - `GRANT` - Grant privileges to other users
+  - `USAGE` - Use a schema or type
+  - `EXECUTE` - Execute a function
+  - `ZONECONFIG` - Modify replication zones
+  - `CONNECT` - Connect to a database
+</ParamField>
+
+<ParamField path="target" type="identifier">
+  A comma-separated list of database, table, sequence, or function names. The list should be preceded by the object type (e.g., `DATABASE mydatabase`).
+</ParamField>
+
+<ParamField path="ALL SEQUENCES IN SCHEMA" type="clause">
+  Grant privileges on all sequences in a schema or list of schemas.
+</ParamField>
+
+<ParamField path="ALL TABLES IN SCHEMA" type="clause">
+  Grant privileges on all tables and sequences in a schema or list of schemas.
+</ParamField>
+
+<ParamField path="ALL FUNCTIONS IN SCHEMA" type="clause">
+  Grant privileges on all user-defined functions in a schema or list of schemas.
+</ParamField>
+
+<ParamField path="role_spec" type="identifier">
+  A comma-separated list of roles.
+</ParamField>
+
+<ParamField path="WITH ADMIN OPTION" type="keyword">
+  Designate the user as a role admin. Role admins can grant or revoke membership for the specified role.
+</ParamField>
+
+<ParamField path="WITH GRANT OPTION" type="keyword">
+  Allow the user to grant the specified privilege to others.
+</ParamField>
+
+## Required privileges
+
+- To grant privileges, the user granting the privileges must also have the privilege being granted on the target database or tables. For example, a user granting the `SELECT` privilege on a table to another user must have the `SELECT` privileges on that table and `WITH GRANT OPTION` on `SELECT`.
+
+- To grant roles, the user granting role membership must be a role admin (i.e., members with the `WITH ADMIN OPTION`) or a member of the `admin` role. To grant membership to the `admin` role, the user must have `WITH ADMIN OPTION` on the `admin` role.
+
+## Details
+
+### Granting privileges
+
+When a role or user is granted privileges for a table, the privileges are limited to the table. The user does not automatically get privileges to new or existing tables in the database.
+
+### Granting roles
+
+- Users and roles can be members of roles
+- The `root` user is automatically created as an `admin` role and assigned the `ALL` privilege for new databases
+- All privileges of a role are inherited by all its members
+- Membership loops are not allowed (direct or indirect)
+
+## Examples
+
+### Grant privileges on databases
+
+```sql
+CREATE USER IF NOT EXISTS max WITH PASSWORD 'roach';
+```
+
+```sql
+GRANT ALL ON DATABASE movr TO max WITH GRANT OPTION;
+```
+
+```sql
+SHOW GRANTS ON DATABASE movr;
+```
+
+```
+  database_name | grantee | privilege_type | is_grantable
+----------------+---------+----------------+---------------
+  movr          | admin   | ALL            |      t
+  movr          | max     | ALL            |      t
+  movr          | public  | CONNECT        |      f
+  movr          | root    | ALL            |      t
+```
+
+### Grant privileges on specific tables
+
+```sql
+GRANT DELETE ON TABLE rides TO max;
+```
+
+```sql
+SHOW GRANTS ON TABLE rides;
+```
+
+```
+  database_name | schema_name | table_name | grantee | privilege_type | is_grantable
+----------------+-------------+------------+---------+----------------+---------------
+  movr          | public      | rides      | admin   | ALL            |      t
+  movr          | public      | rides      | max     | DELETE         |      f
+  movr          | public      | rides      | root    | ALL            |      t
+```
+
+### Grant privileges on all tables in a database or schema
+
+To grant all the privileges on existing tables to a user:
+
+```sql
+GRANT ALL ON * TO max;
+```
+
+```sql
+SHOW GRANTS ON TABLE movr.public.*;
+```
+
+To ensure that anytime a new table is created, all the privileges on that table are granted to a user, use `ALTER DEFAULT PRIVILEGES`:
+
+```sql
+ALTER DEFAULT PRIVILEGES FOR ALL ROLES GRANT ALL ON TABLES TO max;
+```
+
+To check that this is working as expected, create a table:
+
+```sql
+CREATE TABLE IF NOT EXISTS usertable(x INT);
+```
+
+Then, check that the privileges are granted:
+
+```sql
+SHOW GRANTS ON TABLE usertable;
+```
+
+```
+  database_name | schema_name | table_name | grantee | privilege_type | is_grantable
+----------------+-------------+------------+---------+----------------+---------------
+  movr          | public      | usertable  | admin   | ALL            |      t
+  movr          | public      | usertable  | max     | ALL            |      f
+  movr          | public      | usertable  | root    | ALL            |      t
+```
+
+### Grant system-level privileges
+
+System-level privileges live above the database level and apply to the entire cluster.
+
+`root` and `admin` users have system-level privileges by default, and are capable of granting it to other users and roles using the `GRANT` statement.
+
+```sql
+GRANT SYSTEM MODIFYCLUSTERSETTING TO max;
+```
+
+### Make a table readable to every user
+
+```sql
+GRANT SELECT ON TABLE vehicles TO public;
+```
+
+```sql
+SHOW GRANTS ON TABLE vehicles;
+```
+
+```
+  database_name | schema_name | table_name | grantee | privilege_type | is_grantable
+----------------+-------------+------------+---------+----------------+---------------
+  movr          | public      | vehicles   | admin   | ALL            |      t
+  movr          | public      | vehicles   | max     | ALL            |      f
+  movr          | public      | vehicles   | public  | SELECT         |      f
+  movr          | public      | vehicles   | root    | ALL            |      t
+```
+
+### Grant privileges on schemas
+
+```sql
+CREATE SCHEMA IF NOT EXISTS cockroach_labs;
+```
+
+```sql
+GRANT ALL ON SCHEMA cockroach_labs TO max WITH GRANT OPTION;
+```
+
+```sql
+SHOW GRANTS ON SCHEMA cockroach_labs;
+```
+
+```
+  database_name |  schema_name   | grantee | privilege_type | is_grantable
+----------------+----------------+---------+----------------+---------------
+  movr          | cockroach_labs | admin   | ALL            |      t
+  movr          | cockroach_labs | max     | ALL            |      t
+  movr          | cockroach_labs | root    | ALL            |      t
+```
+
+### Grant privileges on user-defined types
+
+```sql
+CREATE TYPE IF NOT EXISTS status AS ENUM ('open', 'closed', 'inactive');
+```
+
+```sql
+GRANT ALL ON TYPE status TO max WITH GRANT OPTION;
+```
+
+```sql
+SHOW GRANTS ON TYPE status;
+```
+
+```
+  database_name | schema_name | type_name | grantee | privilege_type | is_grantable
+----------------+-------------+-----------+---------+----------------+---------------
+  movr          | public      | status    | admin   | ALL            |      t
+  movr          | public      | status    | max     | ALL            |      t
+  movr          | public      | status    | public  | USAGE          |      f
+  movr          | public      | status    | root    | ALL            |      t
+```
+
+### Grant the privilege to manage replication zones
+
+```sql
+GRANT ZONECONFIG ON TABLE rides TO max;
+```
+
+The user `max` can then use the `CONFIGURE ZONE` statement to add, modify, reset, or remove replication zones for the table `rides`.
+
+### Grant role membership
+
+```sql
+CREATE ROLE IF NOT EXISTS developer WITH CREATEDB;
+```
+
+```sql
+CREATE USER IF NOT EXISTS abbey WITH PASSWORD 'lincoln';
+```
+
+```sql
+GRANT developer TO abbey;
+```
+
+```sql
+SHOW GRANTS ON ROLE developer;
+```
+
+```
+  role_name | member | is_admin
+------------+--------+-----------
+  developer | abbey  |  false
+```
+
+### Grant the admin option
+
+```sql
+GRANT developer TO abbey WITH ADMIN OPTION;
+```
+
+```sql
+SHOW GRANTS ON ROLE developer;
+```
+
+```
+  role_name | member | is_admin
+------------+--------+-----------
+  developer | abbey  |   true
+```
+
+## See also
+
+- REVOKE
+- SHOW GRANTS
+- CREATE ROLE
+- ALTER ROLE
+- DROP ROLE
+- Privileges

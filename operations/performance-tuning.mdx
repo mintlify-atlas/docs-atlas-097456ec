@@ -1,0 +1,599 @@
+---
+title: Performance Tuning
+description: Best practices and techniques for optimizing CockroachDB query performance and cluster efficiency
+---
+
+This guide covers performance optimization techniques for CockroachDB, from SQL query tuning to cluster-level configuration.
+
+## SQL Performance Best Practices
+
+### DML Operations
+
+<Accordion title="Use multi-row statements">
+Single multi-row statements are significantly faster than multiple single-row statements.
+
+<CodeBlock>
+```sql
+-- Inefficient: Multiple single-row inserts
+INSERT INTO users (id, name) VALUES (1, 'Alice');
+INSERT INTO users (id, name) VALUES (2, 'Bob');
+INSERT INTO users (id, name) VALUES (3, 'Charlie');
+
+-- Efficient: Single multi-row insert
+INSERT INTO users (id, name) VALUES 
+  (1, 'Alice'),
+  (2, 'Bob'),
+  (3, 'Charlie');
+```
+</CodeBlock>
+
+**Benefits:**
+- Reduces network round trips
+- Decreases transaction overhead
+- Improves overall throughput
+</Accordion>
+
+<Accordion title="Use UPSERT for tables without secondary indexes">
+For tables with no secondary indexes, `UPSERT` is faster than `INSERT ON CONFLICT`.
+
+<CodeBlock>
+```sql
+-- Tables with no secondary indexes: Use UPSERT
+UPSERT INTO users (id, name, email) 
+VALUES (1, 'Alice', 'alice@example.com');
+
+-- Tables with secondary indexes: Use INSERT ON CONFLICT
+INSERT INTO users (id, name, email) 
+VALUES (1, 'Alice', 'alice@example.com')
+ON CONFLICT (id) DO UPDATE SET 
+  name = excluded.name,
+  email = excluded.email;
+```
+</CodeBlock>
+
+**Reason:** `UPSERT` uses a blind write without checking for existing data, which is faster when there are no secondary indexes to maintain.
+</Accordion>
+
+### Bulk Operations
+
+<Accordion title="Bulk insert best practices">
+For inserting large amounts of data into existing tables:
+
+<CodeBlock>
+```sql
+-- Batch inserts in groups (experiment with batch size)
+INSERT INTO orders (id, customer_id, amount) VALUES
+  (1, 100, 50.00),
+  (2, 101, 75.50),
+  (3, 102, 125.00)
+  -- ... up to 100-1000 rows per batch
+;
+
+-- Alternative: Use IMPORT INTO for CSV data
+IMPORT INTO orders (id, customer_id, amount)
+  CSV DATA ('s3://bucket/orders.csv')
+  WITH delimiter = ',';
+```
+</CodeBlock>
+
+<Warning>
+Large multi-row INSERTs can lead to transaction retry errors if they exceed transaction deadlines. Break up into smaller batches if you see `40001` errors with message `transaction deadline exceeded`.
+</Warning>
+</Accordion>
+
+<Accordion title="Bulk delete strategies">
+Deleting large amounts of data requires special consideration:
+
+<CodeBlock>
+```sql
+-- Use TRUNCATE to delete all rows (fastest)
+TRUNCATE orders;
+
+-- For partial deletes, use batch deletions
+DELETE FROM orders 
+WHERE order_date < '2023-01-01' 
+LIMIT 1000;
+-- Repeat until no more rows to delete
+
+-- Use Row-Level TTL for automatic deletion of expired data
+ALTER TABLE sessions ADD COLUMN crdb_internal_expiration TIMESTAMPTZ;
+ALTER TABLE sessions SET (
+  ttl_expiration_expression = 'crdb_internal_expiration',
+  ttl_job_cron = '@daily'
+);
+```
+</CodeBlock>
+
+**`TRUNCATE` benefits:**
+- Drops and recreates the table (no row-by-row deletion)
+- Significantly faster than `DELETE` for removing all rows
+- Releases disk space immediately
+</Accordion>
+
+### Unique ID Generation
+
+The approach to generating unique IDs has significant performance implications in distributed databases.
+
+<Accordion title="Multi-column primary keys (best performance)">
+Well-designed composite keys provide the best performance:
+
+<CodeBlock>
+```sql
+CREATE TABLE posts (
+  username STRING,
+  post_timestamp TIMESTAMP,
+  post_id INT,
+  post_content STRING,
+  PRIMARY KEY (username, post_timestamp)
+);
+```
+</CodeBlock>
+
+**Benefits:**
+- Distributes data across the cluster (avoids hotspots)
+- Monotonically increasing column is not the first column
+- Natural clustering for query patterns
+
+**Example query that benefits:**
+<CodeBlock>
+```sql
+SELECT * FROM posts
+WHERE username = 'alice'
+ORDER BY post_timestamp DESC
+LIMIT 10;
+```
+</CodeBlock>
+</Accordion>
+
+<Accordion title="UUID and hash-sharded indexes (good performance)">
+Use built-in functions for distributing keys:
+
+<CodeBlock>
+```sql
+-- Use gen_random_uuid() for UUID primary keys
+CREATE TABLE orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id INT,
+  amount DECIMAL
+);
+
+-- Use hash-sharded indexes for sequential IDs
+CREATE TABLE events (
+  id INT PRIMARY KEY USING HASH,
+  event_type STRING,
+  created_at TIMESTAMP
+);
+```
+</CodeBlock>
+
+**Comparison:**
+- `gen_random_uuid()`: Widely compatible, random distribution
+- `unique_rowid()`: 64-bit integer, good distribution
+- Hash-sharded indexes: Use when you need sequential IDs with distributed writes
+</Accordion>
+
+<Accordion title="Avoid sequential IDs (poor performance)">
+Monotonically increasing IDs create write hotspots:
+
+<CodeBlock>
+```sql
+-- Avoid: Creates hotspot on single range
+CREATE TABLE bad_example (
+  id SERIAL PRIMARY KEY,  -- or INT DEFAULT unique_rowid()
+  data STRING
+);
+
+-- Better: Use UUID or composite key
+CREATE TABLE better_example (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  data STRING
+);
+```
+</CodeBlock>
+
+**Problem with sequential IDs:**
+- All writes go to the same range (the one containing the highest IDs)
+- Creates CPU and I/O hotspot on one node
+- Limits write throughput to single-node capacity
+</Accordion>
+
+### Index Optimization
+
+<Accordion title="Index columns in WHERE clauses">
+Create indexes on columns used in WHERE clauses:
+
+<CodeBlock>
+```sql
+-- Query that needs optimization
+EXPLAIN SELECT * FROM orders 
+WHERE customer_id = 100 AND status = 'pending';
+
+-- Create covering index
+CREATE INDEX idx_customer_status ON orders (customer_id, status);
+
+-- Even better: Include all selected columns
+CREATE INDEX idx_customer_status_covering ON orders (customer_id, status) 
+STORING (order_date, amount);
+```
+</CodeBlock>
+
+**Index column order matters:**
+- Put equality conditions first
+- Put range conditions last
+- Consider query patterns when ordering columns
+</Accordion>
+
+<Accordion title="Avoid SELECT * for large tables">
+Request only the columns you need:
+
+<CodeBlock>
+```sql
+-- Inefficient: Retrieves all columns
+SELECT * FROM orders WHERE customer_id = 100;
+
+-- Efficient: Retrieves only needed columns
+SELECT order_id, order_date, amount 
+FROM orders 
+WHERE customer_id = 100;
+```
+</CodeBlock>
+
+**Benefits:**
+- Reduces network transfer
+- Uses less memory
+- May use covering indexes
+</Accordion>
+
+<Accordion title="Use column families for hot/cold data">
+Group frequently updated columns separately from rarely updated ones:
+
+<CodeBlock>
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  username STRING,
+  email STRING,
+  -- Hot: Updated frequently
+  login_count INT,
+  last_login TIMESTAMP,
+  -- Cold: Rarely updated  
+  bio TEXT,
+  avatar_url STRING,
+  FAMILY hot (id, username, email, login_count, last_login),
+  FAMILY cold (bio, avatar_url)
+);
+```
+</CodeBlock>
+
+**Benefits:**
+- Reduces write amplification
+- Smaller writes when updating hot columns
+- Better compaction performance
+</Accordion>
+
+### Query Optimization
+
+<Accordion title="Use EXPLAIN to analyze queries">
+Always use `EXPLAIN` to understand query plans:
+
+<CodeBlock>
+```sql
+-- Basic query plan
+EXPLAIN SELECT * FROM orders WHERE customer_id = 100;
+
+-- Detailed execution statistics
+EXPLAIN ANALYZE SELECT * FROM orders WHERE customer_id = 100;
+
+-- With options for more detail
+EXPLAIN (VERBOSE) SELECT * FROM orders WHERE customer_id = 100;
+```
+</CodeBlock>
+
+**Look for:**
+- Full table scans (scan without index)
+- High row counts
+- Expensive operations (sort, hash join)
+- Missing statistics
+</Accordion>
+
+<Accordion title="Use AS OF SYSTEM TIME for long-running queries">
+Reduce contention for analytics queries:
+
+<CodeBlock>
+```sql
+-- Historical read that won't conflict with writes
+SELECT COUNT(*), AVG(amount) 
+FROM orders
+AS OF SYSTEM TIME '-10s';
+
+-- Run reports without impacting production
+SELECT customer_id, SUM(amount) as total
+FROM orders
+AS OF SYSTEM TIME '-1m'
+GROUP BY customer_id;
+```
+</CodeBlock>
+
+**Benefits:**
+- No transaction conflicts with writes
+- Doesn't affect write latency
+- Can read historical data
+
+**Trade-off:** Reads may be slightly stale (10s-1m old)
+</Accordion>
+
+## Cluster Performance Configuration
+
+### CPU and Concurrency
+
+<Accordion title="CPU planning">
+Provision adequate CPU resources:
+
+- **Minimum**: 4 vCPUs per node for stability
+- **Recommended**: 8-16 vCPUs per node for production
+- **Maximum tested**: 32 vCPUs per node
+
+<Warning>
+With too few vCPUs, background maintenance competes with foreground queries, causing performance degradation.
+</Warning>
+</Accordion>
+
+<Accordion title="Connection pooling">
+Limit database connections to match CPU capacity:
+
+<CodeBlock>
+```bash
+# Application connection pool configuration
+max_connections = (num_cpu_cores * 4)
+min_connections = (num_cpu_cores)
+```
+</CodeBlock>
+
+**Example for 8 vCPU cluster (3 nodes):**
+- Total vCPUs: 24
+- Max connections per app instance: 96
+- Min connections per app instance: 24
+
+<Info>
+Use connection poolers like PgBouncer for applications with many clients.
+</Info>
+</Accordion>
+
+### Memory Configuration
+
+<Accordion title="Memory allocation">
+Configure cache and SQL memory:
+
+<CodeBlock>
+```bash
+# Recommended memory settings on node startup
+cockroach start \
+  --cache=25% \          # RocksDB cache (default 25%)
+  --max-sql-memory=25% \ # SQL query memory (default 25%)
+  ...
+```
+</CodeBlock>
+
+**Total memory guidelines:**
+- Minimum: 16 GB per node
+- Recommended: 32-64 GB per node
+- Cache + SQL memory should be ≤50% of total RAM
+</Accordion>
+
+<Accordion title="Prevent OOM issues">
+Monitor and prevent out-of-memory crashes:
+
+<CodeBlock>
+```sql
+-- Monitor SQL memory usage
+SHOW CLUSTER SETTING sql.mem.max_sql_memory;
+
+-- Monitor active query memory
+SELECT 
+  query,
+  txn_id,
+  start_time,
+  mem_usage
+FROM crdb_internal.node_queries
+WHERE mem_usage > 1073741824  -- 1 GB
+ORDER BY mem_usage DESC;
+```
+</CodeBlock>
+
+**Prevention:**
+- Disable swap: `sudo swapoff -a`
+- Set appropriate `--max-sql-memory`
+- Optimize memory-intensive queries
+- Monitor `diagnostics.active_query_dumps.enabled` for memory pressure dumps
+</Accordion>
+
+### Storage Performance
+
+<Accordion title="Disk I/O requirements">
+Provision adequate I/O capacity:
+
+- **Minimum IOPS**: 500 IOPS per node
+- **Recommended**: 2000+ IOPS per node
+- **Disk type**: SSD or NVMe (not HDD)
+- **Latency**: Under 10ms for sustained operations
+
+**Cloud recommendations:**
+- AWS: Use gp3 (baseline 3000 IOPS) or io2 volumes
+- GCP: Use pd-ssd or pd-extreme disks  
+- Azure: Use Premium SSD or Ultra Disk
+</Accordion>
+
+<Accordion title="Monitor LSM health">
+Keep the storage engine healthy:
+
+<CodeBlock>
+```sql
+-- Check LSM health
+SELECT 
+  store_id,
+  l0_sublevels,
+  l0_num_files
+FROM crdb_internal.kv_store_status
+WHERE l0_sublevels > 20;  -- Warning threshold
+
+-- Check read amplification
+SHOW CLUSTER SETTING storage.read_amplification;
+```
+</CodeBlock>
+
+**Thresholds:**
+- L0 sublevels: Under 20 healthy, 20-100 warning, over 100 critical
+- Read amplification: Under 10 healthy, 10-20 warning, over 20 critical
+
+**Resolution:**
+- Reduce write rate temporarily
+- Increase CPU allocation for compaction
+- Check `kv.snapshot_rebalance.max_rate` isn't too high
+</Accordion>
+
+### Replication and Distribution
+
+<Accordion title="Replication factor">
+Balance availability and performance:
+
+<CodeBlock>
+```sql
+-- View current replication settings
+SHOW ZONE CONFIGURATION FOR RANGE default;
+
+-- Modify replication factor
+ALTER RANGE default CONFIGURE ZONE USING num_replicas = 3;
+
+-- Database-specific replication
+ALTER DATABASE mydb CONFIGURE ZONE USING num_replicas = 5;
+```
+</CodeBlock>
+
+**Replication trade-offs:**
+- 3 replicas: Standard, tolerates 1 node failure
+- 5 replicas: High availability, tolerates 2 node failures, higher write latency
+- 1 replica: Testing only, no fault tolerance
+</Accordion>
+
+<Accordion title="Geo-partitioning for multi-region">
+Optimize for regional access patterns:
+
+<CodeBlock>
+```sql
+-- Pin data to specific regions
+ALTER TABLE users PARTITION BY LIST (region) (
+  PARTITION us_west VALUES IN ('us-west'),
+  PARTITION us_east VALUES IN ('us-east'),
+  PARTITION europe VALUES IN ('europe')
+);
+
+-- Configure partition placement
+ALTER PARTITION us_west OF TABLE users 
+  CONFIGURE ZONE USING constraints = '[+region=us-west]';
+
+ALTER PARTITION us_east OF TABLE users 
+  CONFIGURE ZONE USING constraints = '[+region=us-east]';
+```
+</CodeBlock>
+
+**Benefits:**
+- Lower latency for regional users
+- Compliance with data domiciling requirements
+- Reduced cross-region traffic
+</Accordion>
+
+## Performance Monitoring
+
+<Accordion title="Key metrics to watch">
+
+**Latency:**
+- P99 SQL latency: Under 100ms for OLTP
+- P99 commit latency: Under 50ms single region
+
+**Throughput:**
+- QPS: Based on workload, watch trends
+- Queries per second per vCPU: ~1000-2000
+
+**Resources:**
+- CPU: 30-80% normal, over 80% investigate
+- Memory: Under 90% total, under 75% SQL memory
+- Disk: Under 85% capacity, under 80% sustained IOPS
+
+**Replication:**
+- Under-replicated ranges: 0
+- Unavailable ranges: 0
+- Rebalancing: Minimal during steady state
+</Accordion>
+
+## Troubleshooting Performance Issues
+
+<Accordion title="High latency">
+**Symptoms:** Slow query response times
+
+**Diagnosis:**
+<CodeBlock>
+```sql
+-- Check slow queries
+SELECT query, count, avg_latency, p99_latency
+FROM crdb_internal.statement_statistics
+WHERE avg_latency > interval '100ms'
+ORDER BY avg_latency DESC
+LIMIT 10;
+
+-- Check contention
+SELECT * FROM crdb_internal.cluster_contention_events
+ORDER BY contention_duration DESC
+LIMIT 10;
+```
+</CodeBlock>
+
+**Solutions:**
+- Add indexes for slow queries
+- Optimize query plans
+- Reduce transaction contention
+- Check CPU and disk I/O
+</Accordion>
+
+<Accordion title="Write hotspots">
+**Symptoms:** High CPU on single node, slow writes
+
+**Diagnosis:**
+<CodeBlock>
+```sql
+-- Check for range hotspots
+SELECT 
+  range_id,
+  writes_per_second,
+  lease_holder
+FROM crdb_internal.ranges
+WHERE writes_per_second > 1000
+ORDER BY writes_per_second DESC;
+```
+</CodeBlock>
+
+**Solutions:**
+- Use UUID or composite primary keys (not sequential)
+- Enable hash-sharded indexes
+- Review table design for hotspot causes
+</Accordion>
+
+<Accordion title="Memory pressure">
+**Symptoms:** Node restarts, OOM errors
+
+**Diagnosis:**
+<CodeBlock>
+```bash
+# Check system logs for OOM
+sudo dmesg | grep -i "out of memory"
+
+# Check CockroachDB memory usage
+grep "memory budget" /var/log/cockroach/cockroach.log
+```
+</CodeBlock>
+
+**Solutions:**
+- Increase node memory
+- Reduce `--max-sql-memory`
+- Optimize memory-intensive queries
+- Enable `diagnostics.active_query_dumps.enabled`
+</Accordion>

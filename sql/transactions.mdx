@@ -1,0 +1,394 @@
+---
+title: Transactions
+description: Guide to using SQL transactions in CockroachDB with ACID guarantees
+---
+
+CockroachDB supports bundling multiple SQL statements into a single all-or-nothing transaction. Each transaction guarantees ACID semantics spanning arbitrary tables and rows, even when data is distributed across multiple nodes.
+
+## Overview
+
+Transactions in CockroachDB provide:
+
+- **Atomicity**: All statements succeed together or fail together
+- **Consistency**: Database constraints are maintained
+- **Isolation**: Concurrent transactions don't interfere with each other
+- **Durability**: Committed data is permanently stored
+
+By default, CockroachDB guarantees `SERIALIZABLE` isolation, the highest isolation level, ensuring that concurrent transactions appear to execute in a serial order.
+
+## Transaction Syntax
+
+Transactions are initiated with `BEGIN` and completed with `COMMIT` or `ROLLBACK`.
+
+<Tabs>
+  <Tab title="Basic Transaction">
+    ```sql
+    BEGIN;
+
+    UPDATE products SET inventory = inventory - 1 WHERE sku = '8675309';
+    INSERT INTO orders (customer, sku, status) VALUES (1001, '8675309', 'new');
+
+    COMMIT;
+    ```
+  </Tab>
+
+  <Tab title="With Savepoint">
+    ```sql
+    BEGIN;
+
+    SAVEPOINT cockroach_restart;
+
+    UPDATE products SET inventory = inventory - 1 WHERE sku = '8675309';
+    INSERT INTO orders (customer, sku, status) VALUES (1001, '8675309', 'new');
+
+    RELEASE SAVEPOINT cockroach_restart;
+
+    COMMIT;
+    ```
+    <Note>
+      Use savepoints for advanced retry handling in `SERIALIZABLE` transactions.
+    </Note>
+  </Tab>
+
+  <Tab title="Rollback">
+    ```sql
+    BEGIN;
+
+    UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+    UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+
+    -- Something went wrong
+    ROLLBACK;
+    ```
+  </Tab>
+</Tabs>
+
+## Transaction Statements
+
+<ParamField path="BEGIN" type="statement">
+  Initiate a transaction with optional priority, access mode, timestamp, or isolation level.
+
+  ```sql
+  BEGIN;
+  BEGIN PRIORITY HIGH;
+  BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED;
+  BEGIN TRANSACTION READ ONLY;
+  ```
+</ParamField>
+
+<ParamField path="COMMIT" type="statement">
+  Commit the current transaction, making all changes permanent.
+
+  ```sql
+  COMMIT;
+  ```
+</ParamField>
+
+<ParamField path="ROLLBACK" type="statement">
+  Abort the transaction and discard all changes.
+
+  ```sql
+  ROLLBACK;
+  ```
+</ParamField>
+
+<ParamField path="SAVEPOINT" type="statement">
+  Create a savepoint for nested transactions.
+
+  ```sql
+  SAVEPOINT sp1;
+  ```
+</ParamField>
+
+<ParamField path="RELEASE SAVEPOINT" type="statement">
+  Commit a nested transaction.
+
+  ```sql
+  RELEASE SAVEPOINT sp1;
+  ```
+</ParamField>
+
+<ParamField path="ROLLBACK TO SAVEPOINT" type="statement">
+  Roll back to a savepoint, discarding changes made after it.
+
+  ```sql
+  ROLLBACK TO SAVEPOINT sp1;
+  ```
+</ParamField>
+
+<ParamField path="SET TRANSACTION" type="statement">
+  Set transaction properties after BEGIN.
+
+  ```sql
+  SET TRANSACTION PRIORITY HIGH;
+  SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+  ```
+</ParamField>
+
+## Isolation Levels
+
+CockroachDB supports two isolation levels:
+
+### SERIALIZABLE (Default)
+
+`SERIALIZABLE` isolation provides the strongest consistency guarantees. Transactions appear to execute in a serial order, preventing all anomalies.
+
+```sql
+BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+-- Your statements here
+COMMIT;
+```
+
+<Note>
+  Under `SERIALIZABLE` isolation, transactions may encounter retry errors during contention. Implement retry logic in your application.
+</Note>
+
+### READ COMMITTED
+
+`READ COMMITTED` isolation provides weaker consistency but avoids transaction retry errors. Each statement sees a snapshot of data committed before the statement began.
+
+```sql
+BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED;
+-- Your statements here
+COMMIT;
+```
+
+<Warning>
+  `READ COMMITTED` must be explicitly enabled via the `sql.txn.read_committed_isolation.enabled` cluster setting.
+</Warning>
+
+## Transaction Priorities
+
+You can set transaction priority to influence retry behavior during contention.
+
+<ParamField path="NORMAL" type="priority" default>
+  Default priority for most transactions.
+</ParamField>
+
+<ParamField path="LOW" type="priority">
+  Use for background or less critical transactions.
+</ParamField>
+
+<ParamField path="HIGH" type="priority">
+  Use for critical transactions that should be prioritized.
+</ParamField>
+
+<CodeGroup>
+```sql Set on BEGIN
+BEGIN PRIORITY HIGH;
+UPDATE critical_table SET value = 1;
+COMMIT;
+```
+
+```sql Set After BEGIN
+BEGIN;
+SET TRANSACTION PRIORITY HIGH;
+UPDATE critical_table SET value = 1;
+COMMIT;
+```
+
+```sql Session Default
+SET default_transaction_priority = 'high';
+```
+</CodeGroup>
+
+<Tip>
+  Use the default `NORMAL` priority unless you have specific requirements. Overusing `HIGH` priority can reduce its effectiveness.
+</Tip>
+
+## Transaction Retries
+
+Transactions may need to retry due to contention with concurrent transactions.
+
+### Automatic Retries
+
+CockroachDB automatically retries:
+
+- **Single statements** (implicit transactions)
+- **Batched statements** where results fit in the 16 KiB buffer
+
+```sql
+-- Automatically retried if needed
+DELETE FROM customers WHERE id = 1;
+```
+
+You can increase the buffer size to enable more automatic retries:
+
+```sql
+SET CLUSTER SETTING sql.conn.max_read_buffer_message_size = '65536';
+```
+
+### Client-Side Retries
+
+For `SERIALIZABLE` transactions that span multiple statements, implement retry logic in your application:
+
+```python Python Example
+import psycopg2
+from psycopg2 import errorcodes
+
+def run_transaction(conn):
+    with conn.cursor() as cur:
+        cur.execute("SAVEPOINT cockroach_restart")
+        try:
+            # Your transaction logic here
+            cur.execute("UPDATE accounts SET balance = balance - 100 WHERE id = 1")
+            cur.execute("UPDATE accounts SET balance = balance + 100 WHERE id = 2")
+            cur.execute("RELEASE SAVEPOINT cockroach_restart")
+        except psycopg2.Error as e:
+            if e.pgcode == errorcodes.SERIALIZATION_FAILURE:
+                cur.execute("ROLLBACK TO SAVEPOINT cockroach_restart")
+                raise  # Retry the transaction
+            else:
+                raise
+
+while True:
+    try:
+        run_transaction(conn)
+        conn.commit()
+        break
+    except psycopg2.Error as e:
+        if e.pgcode == errorcodes.SERIALIZATION_FAILURE:
+            continue  # Retry
+        else:
+            raise
+```
+
+<Note>
+  `READ COMMITTED` transactions do not require client-side retry handling.
+</Note>
+
+## Error Handling
+
+Handle these error types in your application:
+
+| Error Type | Code | Description |
+|------------|------|-------------|
+| **Transaction Retry** | `40001` | Transaction failed due to contention. Retry the entire transaction. |
+| **Ambiguous Error** | `40003` | Transaction state is unknown. Verify whether it committed. |
+| **SQL Error** | Various | Statement failed due to constraint violation, syntax error, etc. |
+
+<Tabs>
+  <Tab title="Retry Error">
+    ```sql
+    ERROR: restart transaction: TransactionRetryWithProtoRefreshError
+    SQLSTATE: 40001
+    ```
+    
+    **Action**: Retry the entire transaction from `BEGIN`.
+  </Tab>
+
+  <Tab title="Ambiguous Error">
+    ```sql
+    ERROR: result is ambiguous
+    SQLSTATE: 40003
+    ```
+    
+    **Action**: Check if the transaction committed before retrying.
+  </Tab>
+
+  <Tab title="SQL Error">
+    ```sql
+    ERROR: duplicate key value violates unique constraint
+    SQLSTATE: 23505
+    ```
+    
+    **Action**: Fix the application logic causing the error.
+  </Tab>
+</Tabs>
+
+## Nested Transactions
+
+Use savepoints to create nested transactions that can be rolled back independently.
+
+```sql
+BEGIN;
+
+INSERT INTO users (id, name) VALUES (1, 'Alice');
+
+SAVEPOINT sp1;
+INSERT INTO orders (user_id, total) VALUES (1, 100.00);
+
+SAVEPOINT sp2;
+INSERT INTO logs (message) VALUES ('Order created');
+
+-- Rollback only the log insert
+ROLLBACK TO SAVEPOINT sp2;
+
+-- Commit the order insert
+RELEASE SAVEPOINT sp1;
+
+COMMIT;
+```
+
+The relationship between transaction and savepoint statements:
+
+| Transaction Statement | Effect | Savepoint Statement | Effect |
+|----------------------|---------|---------------------|--------|
+| `COMMIT` | Commit entire transaction | `RELEASE SAVEPOINT` | Commit nested transaction |
+| `ROLLBACK` | Discard entire transaction | `ROLLBACK TO SAVEPOINT` | Discard nested transaction |
+
+## Batched Statements
+
+Send multiple statements as a single batch for automatic retry:
+
+```go Go Example
+db.Exec(`
+    BEGIN;
+    DELETE FROM customers WHERE id = 1;
+    DELETE FROM orders WHERE customer = 1;
+    COMMIT;
+`)
+```
+
+Batching tells CockroachDB that statements aren't conditional on each other's results, enabling automatic retries.
+
+## Transaction Limits
+
+You can limit the number of rows read or written in a transaction to prevent large transactions from impacting cluster performance.
+
+<CodeGroup>
+```sql Cluster Settings
+SET CLUSTER SETTING sql.defaults.transaction_rows_read_err = 100000;
+SET CLUSTER SETTING sql.defaults.transaction_rows_written_err = 50000;
+```
+
+```sql Session Variables
+SET transaction_rows_read_err = 100000;
+SET transaction_rows_written_err = 50000;
+```
+</CodeGroup>
+
+<Warning>
+  Enabling `transaction_rows_read_err` disables a performance optimization for mutation statements in implicit transactions.
+</Warning>
+
+## Best Practices
+
+1. **Keep transactions short**: Long transactions increase contention and retry likelihood
+2. **Use appropriate isolation**: Choose `READ COMMITTED` if you don't need full serializability
+3. **Implement retry logic**: Always handle retry errors in `SERIALIZABLE` transactions
+4. **Use savepoints wisely**: Nested transactions enable fine-grained rollback
+5. **Batch when possible**: Send related statements as a batch for automatic retries
+6. **Monitor contention**: Use the DB Console to identify and resolve transaction contention
+
+## AS OF SYSTEM TIME
+
+Read historical data using the `AS OF SYSTEM TIME` clause:
+
+```sql
+BEGIN TRANSACTION READ ONLY AS OF SYSTEM TIME '-5m';
+SELECT * FROM orders;
+COMMIT;
+```
+
+This is useful for:
+- Consistent backups
+- Time-travel queries
+- Reducing contention on read-only transactions
+
+## See Also
+
+- [SQL Statements](/sql/statements)
+- [Isolation Levels](https://www.cockroachlabs.com/docs/stable/demo-serializable)
+- [Transaction Retry Reference](https://www.cockroachlabs.com/docs/stable/transaction-retry-error-reference)
+- [DB Console Transactions Page](https://www.cockroachlabs.com/docs/stable/ui-transactions-page)

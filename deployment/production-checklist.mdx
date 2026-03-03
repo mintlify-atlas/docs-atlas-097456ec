@@ -1,0 +1,515 @@
+---
+title: Production Deployment Checklist
+description: Essential recommendations and best practices for production deployments of CockroachDB
+---
+
+This checklist provides critical recommendations for deploying CockroachDB in production. Review each section carefully before going live.
+
+## Topology planning
+
+<Steps>
+  <Step title="Choose deployment pattern">
+    Review [topology patterns](/architecture/topology-patterns) to select the best configuration for your latency and resiliency requirements.
+  </Step>
+
+  <Step title="Node distribution">
+    - Deploy at least 3 nodes for fault tolerance
+    - Use at least 3 nodes per region for multi-region deployments
+    - Distribute nodes across availability zones
+    - Use identical hardware for all nodes
+  </Step>
+
+  <Step title="Replication factor">
+    - Default: 3x replication (suitable for cloud storage)
+    - Local disks: Increase to 5x replication
+    - Configure via zone configs for specific databases or tables
+  </Step>
+</Steps>
+
+## Hardware requirements
+
+### CPU sizing
+
+<CardGroup cols={2}>
+  <Card title="Minimum" icon="microchip">
+    **4 vCPUs per node**
+    
+    Absolute minimum for production stability. Below this, foreground workloads compete with background tasks.
+  </Card>
+
+  <Card title="Recommended" icon="gauge-high">
+    **8-16 vCPUs per node**
+    
+    Optimal range for most workloads. Maximum tested: 32 vCPUs per node.
+  </Card>
+</CardGroup>
+
+<Warning>
+  Avoid burstable or shared-core instances. They limit CPU resources and cause unpredictable performance.
+</Warning>
+
+### Memory provisioning
+
+**Recommendation: 4 GiB RAM per vCPU**
+
+- Minimum acceptable: 2 GiB per vCPU (testing only)
+- Benefits decrease beyond 4 GiB per vCPU as CPU count increases
+- Disable memory swap on Linux systems
+
+<Info>
+  Under-provisioning RAM causes reduced caching, disk spilling, and potential OOM crashes.
+</Info>
+
+### Storage specifications
+
+| Metric | Recommendation |
+|--------|----------------|
+| **Capacity per vCPU** | 100-150 GiB |
+| **Maximum per node** | 10 TiB |
+| **IOPS per vCPU** | 500 |
+| **Throughput per vCPU** | 30 MB/s |
+| **Filesystem** | ext4 or XFS |
+
+<Steps>
+  <Step title="Use SSDs">
+    Always use solid-state drives. HDDs don't provide sufficient IOPS for production workloads.
+  </Step>
+
+  <Step title="Separate volumes">
+    - Store data on dedicated volume (not OS disk)
+    - Keep logs on separate volume from data
+  </Step>
+
+  <Step title="Monitor capacity">
+    - Maintain 10-15% free space at all times
+    - Set up alerts at 80% usage
+    - CockroachDB creates automatic ballast files for emergencies
+  </Step>
+
+  <Step title="Avoid distributed filesystems">
+    Do not use Ceph or similar distributed filesystems. CockroachDB handles replication internally.
+  </Step>
+</Steps>
+
+### Cloud-specific recommendations
+
+<Tabs>
+  <Tab title="AWS">
+    **Instance types:**
+    - i3.xlarge, i3.2xlarge, i3.4xlarge (local SSD)
+    - m6i.xlarge, m6i.2xlarge (network storage)
+
+    **Storage:**
+    - gp3 volumes (cost-effective, 3000 IOPS default)
+    - io2 volumes (higher IOPS, provision separately)
+    - Provision IOPS and throughput to meet 500 IOPS and 30 MB/s per vCPU
+  </Tab>
+
+  <Tab title="GCP">
+    **Instance types:**
+    - n2-standard-4, n2-standard-8, n2-standard-16
+    - c2-standard-4, c2-standard-8, c2-standard-16
+
+    **Storage:**
+    - pd-ssd (SSD persistent disks)
+    - local-ssd (best performance)
+    - IOPS scale with disk size and vCPU count
+  </Tab>
+
+  <Tab title="Azure">
+    **Instance types:**
+    - Standard_D4s_v4, Standard_D8s_v4, Standard_D16s_v4
+    - Standard_E4s_v4, Standard_E8s_v4 (memory-optimized)
+
+    **Storage:**
+    - Premium SSD with appropriate size for required IOPS
+    - Local SSD with ext4 filesystem (not NTFS)
+    - Monitor for NTFS on reboot
+  </Tab>
+</Tabs>
+
+## Security configuration
+
+<Warning>
+  **Never run insecure clusters in production.** Insecure clusters have no authentication, encryption, or authorization.
+</Warning>
+
+### TLS certificates
+
+<Steps>
+  <Step title="Generate certificates">
+    Use `cockroach cert` or `openssl` to create:
+    - CA certificate and key
+    - Node certificates (common name: `node`)
+    - Client certificates (common name: username)
+  </Step>
+
+  <Step title="Distribute certificates">
+    - Place CA cert and node cert/key on each node
+    - Store CA key in secure location (off cluster)
+    - Distribute client certificates to application servers
+  </Step>
+
+  <Step title="Monitor expiration">
+    Set up alerts for certificate expiration and rotate before they expire.
+  </Step>
+</Steps>
+
+### Authentication methods
+
+- **Recommended**: Client certificates for applications
+- **Alternative**: Password authentication with strong passwords
+- **Enterprise**: SSO/SAML integration
+
+## Networking configuration
+
+### Required ports
+
+| Port | Purpose |
+|------|--------|
+| 26257 | Inter-node and client connections (SQL) |
+| 8080 | DB Console (HTTP) |
+
+### Network flags
+
+```bash
+cockroach start \
+  --advertise-addr=<public-address> \
+  --locality=region=us-east,zone=us-east-1a \
+  --join=<node1>,<node2>,<node3>
+```
+
+<Tabs>
+  <Tab title="Single network (private)">
+    ```bash
+    --listen-addr=<private-ip>:26257
+    ```
+    
+    Let `--advertise-addr` default to `--listen-addr`.
+  </Tab>
+
+  <Tab title="Single network (public)">
+    ```bash
+    --advertise-addr=<stable-public-ip>:26257
+    ```
+    
+    Don't specify `--listen-addr`.
+  </Tab>
+
+  <Tab title="Multi-network">
+    ```bash
+    --advertise-addr=<routable-address>:26257 \
+    --locality-advertise-addr=zone=<local-address>:26257
+    ```
+    
+    Requires VPN, VPC peering, or NAT.
+  </Tab>
+</Tabs>
+
+## Load balancing
+
+<Info>
+  Load balancing is essential for performance and reliability. It distributes traffic and routes around failed nodes.
+</Info>
+
+### Health checks
+
+Configure load balancers to use the readiness endpoint:
+
+```
+GET /health?ready=1
+```
+
+This ensures traffic only routes to nodes ready to accept connections.
+
+### High availability
+
+<Steps>
+  <Step title="Deploy multiple load balancers">
+    A single load balancer is a single point of failure.
+  </Step>
+
+  <Step title="Use floating IPs or DNS">
+    Configure failover between load balancer instances.
+  </Step>
+
+  <Step title="Monitor load balancer health">
+    Set up alerts for load balancer failures.
+  </Step>
+</Steps>
+
+## Connection pooling
+
+**Critical for performance**: Applications must use connection pools.
+
+### Sizing guidelines
+
+```
+pool_size = (number_of_cores * 2) + number_of_disks
+```
+
+Typical ranges:
+- Minimum: 4-10 connections
+- Small applications: 10-20 connections
+- Large applications: 20-50 connections per application instance
+
+<Warning>
+  Too few connections cause high latency. Too many connections waste resources and increase contention.
+</Warning>
+
+### Configuration parameters
+
+- `max_connections`: Maximum pool size
+- `min_connections`: Minimum idle connections
+- `max_lifetime`: Connection lifetime (prevent stale connections)
+- `idle_timeout`: Close idle connections
+
+## Cache and memory tuning
+
+### Default settings (not recommended for production)
+
+```bash
+--cache=.25  # 25% of system memory
+--max-sql-memory=.25  # 25% of system memory
+```
+
+### Production settings
+
+```bash
+--cache=.35 --max-sql-memory=.35
+```
+
+Or with absolute values:
+
+```bash
+--cache=8GiB --max-sql-memory=8GiB
+```
+
+<Info>
+  Increasing cache improves read performance. Increasing SQL memory allows more concurrent connections and complex queries.
+</Info>
+
+## Monitoring and alerting
+
+### Essential metrics
+
+<CardGroup cols={2}>
+  <Card title="CPU usage" icon="microchip">
+    Alert at >80% sustained usage
+  </Card>
+
+  <Card title="Memory usage" icon="memory">
+    Alert at >85% of available RAM
+  </Card>
+
+  <Card title="Disk capacity" icon="hard-drive">
+    Alert at >80% full
+  </Card>
+
+  <Card title="Disk IOPS" icon="gauge">
+    Monitor against provisioned limits
+  </Card>
+</CardGroup>
+
+### Monitoring tools
+
+- **DB Console**: Built-in metrics at `http://<node>:8080`
+- **Prometheus**: Scrape `/var/lib/cockroach/cockroach-data/cockroach.prometheus`
+- **Grafana**: Use official CockroachDB dashboards
+- **Alertmanager**: Configure alerts for critical conditions
+
+## Backup and restore
+
+<Steps>
+  <Step title="Schedule regular backups">
+    ```sql
+    CREATE SCHEDULE daily_backup
+    FOR BACKUP INTO 's3://bucket/path?AUTH=implicit'
+    RECURRING '@daily'
+    WITH SCHEDULE OPTIONS first_run = 'now';
+    ```
+  </Step>
+
+  <Step title="Use cloud storage">
+    - Amazon S3
+    - Google Cloud Storage
+    - Azure Blob Storage
+    
+    Enable object locking for immutability.
+  </Step>
+
+  <Step title="Test restores regularly">
+    Verify backup integrity by performing test restores.
+  </Step>
+
+  <Step title="Configure retention">
+    ```sql
+    WITH SCHEDULE OPTIONS keep_last_n_backups = 30
+    ```
+  </Step>
+</Steps>
+
+## Clock synchronization
+
+<Warning>
+  Clock skew causes transaction anomalies and data inconsistencies.
+</Warning>
+
+### Configuration
+
+<Steps>
+  <Step title="Install NTP">
+    ```bash
+    apt-get install ntp
+    systemctl enable ntp
+    systemctl start ntp
+    ```
+  </Step>
+
+  <Step title="Verify synchronization">
+    ```bash
+    ntpq -p
+    ```
+  </Step>
+
+  <Step title="Monitor clock offset">
+    Set alerts for clock offset >250ms.
+  </Step>
+</Steps>
+
+## File descriptors
+
+### Requirements
+
+- **Minimum**: 1956 (1700 per store + 256 for networking)
+- **Recommended**: 15000+ (10000 per store + 5000 for networking)
+- **Best**: Unlimited
+
+### Linux configuration
+
+<Tabs>
+  <Tab title="With systemd">
+    Add to service definition:
+
+    ```ini
+    [Service]
+    LimitNOFILE=15000
+    ```
+
+    Reload systemd:
+
+    ```bash
+    systemctl daemon-reload
+    ```
+  </Tab>
+
+  <Tab title="Without systemd">
+    Edit `/etc/security/limits.conf`:
+
+    ```
+    *    soft    nofile    15000
+    *    hard    nofile    15000
+    ```
+
+    Restart system for changes to take effect.
+  </Tab>
+</Tabs>
+
+## Kubernetes-specific
+
+<CardGroup cols={2}>
+  <Card title="Storage" icon="hard-drive">
+    - Use local SSDs, not network storage
+    - Configure storage class appropriately
+  </Card>
+
+  <Card title="Resources" icon="sliders">
+    - Set CPU and memory limits
+    - Make requests equal to limits
+    - Avoid burstable instances
+  </Card>
+
+  <Card title="Topology" icon="sitemap">
+    - Configure pod anti-affinity
+    - Use topology spread constraints
+    - One pod per Kubernetes node
+  </Card>
+
+  <Card title="Operator" icon="kubernetes">
+    - Use CockroachDB Operator for management
+    - Configure PodDisruptionBudget
+    - Set up proper RBAC
+  </Card>
+</CardGroup>
+
+## Transaction retry handling
+
+<Warning>
+  Applications **must** implement transaction retry logic.
+</Warning>
+
+Transaction contention can cause retries. Your application should:
+
+1. Catch transaction retry errors
+2. Retry the entire transaction
+3. Use exponential backoff
+4. Set maximum retry limits
+
+```python
+for attempt in range(max_retries):
+    try:
+        # Begin transaction
+        # Execute statements
+        # Commit transaction
+        break
+    except TransactionRetryError:
+        if attempt == max_retries - 1:
+            raise
+        sleep(2 ** attempt)
+```
+
+## Pre-deployment checklist
+
+<Steps>
+  <Step title="Hardware">
+    - [ ] Sufficient CPU (min 4 vCPUs, recommended 8+)
+    - [ ] Adequate RAM (4 GiB per vCPU)
+    - [ ] SSD storage with required IOPS
+    - [ ] Network connectivity between nodes
+  </Step>
+
+  <Step title="Security">
+    - [ ] TLS certificates generated and distributed
+    - [ ] CA key stored securely
+    - [ ] Firewall rules configured
+    - [ ] Network isolation in place
+  </Step>
+
+  <Step title="Configuration">
+    - [ ] Clock synchronization configured
+    - [ ] File descriptor limits increased
+    - [ ] Cache and SQL memory tuned
+    - [ ] Load balancer deployed and tested
+  </Step>
+
+  <Step title="Operations">
+    - [ ] Monitoring and alerting configured
+    - [ ] Backup schedule created
+    - [ ] Restore procedure tested
+    - [ ] Incident response plan documented
+  </Step>
+
+  <Step title="Application">
+    - [ ] Connection pooling implemented
+    - [ ] Transaction retry logic added
+    - [ ] Load testing completed
+    - [ ] Failover testing performed
+  </Step>
+</Steps>
+
+## Next steps
+
+- Review [topology patterns](/architecture/topology-patterns)
+- Set up [monitoring](/operations/monitoring)
+- Configure [backup strategies](/operations/backup-restore)
+- Learn about [disaster recovery](/operations/disaster-recovery)

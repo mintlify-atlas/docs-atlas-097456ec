@@ -1,0 +1,317 @@
+---
+title: Migrating from PostgreSQL
+description: Step-by-step guide to migrate your PostgreSQL database to CockroachDB using MOLT tools.
+---
+
+This guide walks you through migrating a PostgreSQL database to CockroachDB using the MOLT toolkit. CockroachDB supports the PostgreSQL wire protocol and is largely compatible with PostgreSQL syntax.
+
+## Before you begin
+
+Ensure you have the following:
+
+- A PostgreSQL database (versions 11-16 supported)
+- A CockroachDB cluster (Cloud or Self-Hosted)
+- Network connectivity between source and target databases
+- Appropriate user permissions on both databases
+
+## Installation
+
+Install the MOLT CLI tools:
+
+<CodeGroup>
+```bash macOS (Homebrew)
+brew install cockroachdb/tap/molt
+```
+
+```bash Linux
+curl -L https://github.com/cockroachdb/molt/releases/latest/download/molt-linux-amd64.tar.gz | tar xvz
+sudo mv molt /usr/local/bin/
+```
+
+```bash Docker
+docker pull cockroachdb/molt:latest
+```
+</CodeGroup>
+
+## Migration workflow
+
+<Steps>
+  <Step title="Create migration users">
+    ### Create PostgreSQL migration user
+
+    The SQL user running MOLT requires specific privileges on the source database.
+
+    ```sql
+    -- Connect to PostgreSQL as a superuser
+    CREATE USER molt_user WITH PASSWORD 'secure_password';
+    
+    -- Grant database privileges
+    GRANT CONNECT ON DATABASE source_db TO molt_user;
+    
+    -- Grant schema privileges
+    GRANT USAGE ON SCHEMA public TO molt_user;
+    
+    -- Grant table privileges
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO molt_user;
+    ```
+
+    ### Create CockroachDB user
+
+    ```sql
+    -- Connect to CockroachDB
+    CREATE USER molt_user WITH PASSWORD 'secure_password';
+    
+    -- Grant database privileges
+    GRANT ALL ON DATABASE target_db TO molt_user;
+    GRANT CREATE ON DATABASE target_db TO molt_user;
+    ```
+  </Step>
+
+  <Step title="Convert the schema">
+    Use the MOLT Schema Conversion Tool to convert your PostgreSQL schema to CockroachDB-compatible DDL.
+
+    <Note>
+    The Schema Conversion Tool is available in the CockroachDB Cloud Console under the Migrations page.
+    </Note>
+
+    The tool will:
+    - Identify unimplemented features
+    - Rewrite unsupported DDL syntax
+    - Apply CockroachDB schema best practices
+
+    ### Apply the schema
+
+    After conversion, apply the schema to CockroachDB:
+
+    ```sql
+    -- Example converted schema
+    CREATE SCHEMA migration_schema;
+    
+    CREATE TABLE migration_schema.employees (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        first_name STRING NOT NULL,
+        last_name STRING NOT NULL,
+        email STRING UNIQUE,
+        hire_date TIMESTAMPTZ DEFAULT now()
+    );
+    ```
+
+    <Warning>
+    Drop constraints and secondary indexes before data load to improve performance. You'll recreate them after the data load completes.
+    </Warning>
+  </Step>
+
+  <Step title="Configure PostgreSQL for replication (optional)">
+    If you're planning a minimal-downtime migration with continuous replication, configure PostgreSQL for logical replication.
+
+    ### Enable logical replication
+
+    Edit `postgresql.conf`:
+
+    ```ini
+    wal_level = logical
+    max_replication_slots = 10
+    max_wal_senders = 10
+    ```
+
+    Restart PostgreSQL for changes to take effect.
+
+    ### Verify configuration
+
+    ```sql
+    SHOW wal_level;
+    -- Should return: logical
+    ```
+  </Step>
+
+  <Step title="Load data with MOLT Fetch">
+    ### Set connection strings
+
+    ```bash
+    export SOURCE="postgresql://molt_user:password@source-host:5432/source_db?sslmode=require"
+    export TARGET="postgresql://molt_user:password@target-host:26257/target_db?sslmode=require"
+    ```
+
+    ### For bulk load (with downtime)
+
+    Perform a one-time bulk load:
+
+    ```bash
+    molt fetch \
+      --source $SOURCE \
+      --target $TARGET \
+      --schema-filter 'migration_schema' \
+      --table-filter 'employees|payments|orders' \
+      --bucket-path 's3://migration-bucket/data' \
+      --table-handling truncate-if-exists \
+      --ignore-replication-check
+    ```
+
+    ### For minimal downtime migration
+
+    Create replication slot and load data:
+
+    ```bash
+    molt fetch \
+      --source $SOURCE \
+      --target $TARGET \
+      --schema-filter 'migration_schema' \
+      --table-filter 'employees|payments|orders' \
+      --bucket-path 's3://migration-bucket/data' \
+      --table-handling truncate-if-exists \
+      --pglogical-replication-slot-name molt_slot \
+      --pglogical-publication-and-slot-drop-and-recreate
+    ```
+
+    <Info>
+    MOLT Fetch supports multiple data paths:
+    - **Cloud storage**: S3, GCS, or Azure Blob Storage
+    - **Local file server**: For network-isolated environments
+    - **Direct copy**: Stream data directly (use `--direct-copy` flag)
+    </Info>
+  </Step>
+
+  <Step title="Verify data consistency">
+    Use MOLT Verify to confirm data consistency:
+
+    ```bash
+    molt verify \
+      --source $SOURCE \
+      --target $TARGET \
+      --schema-filter 'migration_schema' \
+      --table-filter 'employees|payments|orders'
+    ```
+
+    MOLT Verify checks:
+    - Table structure and column definitions
+    - Row counts
+    - Row-level data consistency
+  </Step>
+
+  <Step title="Start continuous replication (optional)">
+    For minimal downtime migrations, start MOLT Replicator to replicate ongoing changes:
+
+    ```bash
+    replicator pglogical \
+      --sourceConn $SOURCE \
+      --targetConn $TARGET \
+      --targetSchema defaultdb.migration_schema \
+      --slotName molt_slot \
+      --publicationName molt_fetch \
+      --stagingSchema defaultdb._replicator \
+      --stagingCreateSchema \
+      --metricsAddr :30005 \
+      -v
+    ```
+
+    ### Monitor replication
+
+    Access replication metrics at:
+    ```
+    http://localhost:30005/_/varz
+    ```
+
+    Key metrics to monitor:
+    - `replication_lag_seconds`: Time lag between source and target
+    - `mutations_applied`: Number of changes applied
+    - `mutations_pending`: Number of changes queued
+  </Step>
+
+  <Step title="Recreate constraints and indexes">
+    After data load completes, recreate the constraints and indexes you dropped:
+
+    ```sql
+    -- Add foreign key constraints
+    ALTER TABLE migration_schema.orders
+      ADD CONSTRAINT fk_employee
+      FOREIGN KEY (employee_id)
+      REFERENCES migration_schema.employees(id);
+    
+    -- Create secondary indexes
+    CREATE INDEX idx_employees_email
+      ON migration_schema.employees(email);
+    
+    CREATE INDEX idx_orders_date
+      ON migration_schema.orders(order_date);
+    ```
+  </Step>
+
+  <Step title="Cutover to CockroachDB">
+    ### Pre-cutover checklist
+
+    - [ ] Verify data consistency with MOLT Verify
+    - [ ] Confirm replication lag is minimal (if using replication)
+    - [ ] Test application queries on CockroachDB
+    - [ ] Prepare rollback plan
+
+    ### Cutover procedure
+
+    1. **Stop application writes** to the source database
+    2. **Wait for replication to drain** (if using continuous replication)
+    3. **Run final verification** with MOLT Verify
+    4. **Update connection strings** in your application to point to CockroachDB
+    5. **Start application traffic** on CockroachDB
+
+    <Tip>
+    Keep the replication stream running initially so you can failback to PostgreSQL if needed.
+    </Tip>
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Connection issues
+
+<AccordionGroup>
+  <Accordion title="SSL/TLS connection errors">
+    Ensure your connection strings include the correct SSL mode:
+
+    ```bash
+    # For PostgreSQL
+    ?sslmode=require
+    
+    # For CockroachDB Cloud
+    ?sslmode=verify-full&sslrootcert=/path/to/ca.crt
+    ```
+  </Accordion>
+
+  <Accordion title="Authentication failures">
+    Verify user permissions:
+
+    ```sql
+    -- Check PostgreSQL permissions
+    SELECT * FROM information_schema.table_privileges
+    WHERE grantee = 'molt_user';
+    
+    -- Check CockroachDB permissions
+    SHOW GRANTS FOR molt_user;
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Performance issues
+
+- **Increase concurrency**: Use `--table-concurrency` and `--export-concurrency` flags
+- **Adjust batch sizes**: Use `--row-batch-size` to tune shard size
+- **Enable compression**: Use `--compression gzip` for cloud storage
+
+### Data type incompatibilities
+
+<Warning>
+Some PostgreSQL types require conversion:
+- `SERIAL` → `INT` with `DEFAULT unique_rowid()`
+- `BIGSERIAL` → `INT8` with `DEFAULT unique_rowid()`
+- PostgreSQL arrays are supported natively
+- `ENUM` types must be recreated in CockroachDB
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Schema Design" icon="diagram-project" href="/migration/schema-design">
+    Optimize your schema for CockroachDB
+  </Card>
+  <Card title="Migration Strategy" icon="map" href="/migration/migration-strategy">
+    Plan your migration approach
+  </Card>
+</CardGroup>

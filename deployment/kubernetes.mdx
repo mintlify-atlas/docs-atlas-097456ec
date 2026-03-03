@@ -1,0 +1,526 @@
+---
+title: Kubernetes Deployment
+description: Deploy a secure CockroachDB cluster on Kubernetes using the Operator, Helm, or manual StatefulSet configuration
+---
+
+Kubernetes is a portable, extensible platform for managing containerized workloads. You can deploy CockroachDB on Kubernetes using multiple approaches.
+
+## Deployment methods
+
+<CardGroup cols={3}>
+  <Card title="CockroachDB Operator" icon="kubernetes">
+    Recommended for production. Automates cluster creation and management.
+  </Card>
+
+  <Card title="Helm Charts" icon="chart-line">
+    Package manager for Kubernetes. Good for customizable deployments.
+  </Card>
+
+  <Card title="Manual StatefulSet" icon="file-code">
+    Maximum control with manual configuration files.
+  </Card>
+</CardGroup>
+
+<Info>
+  This guide focuses on the **CockroachDB Operator** method, which is recommended for most deployments.
+</Info>
+
+## Prerequisites
+
+### Kubernetes version
+
+- Kubernetes 1.30 or higher (for CockroachDB v25.1+)
+- Use a version with active patch support from the Kubernetes project
+
+### Resource requirements
+
+- Minimum per pod: 2 vCPUs and 8 GiB memory
+- Recommended for production: 4 vCPUs and 16 GiB memory
+- At least 3 nodes for a production cluster
+
+### Storage
+
+- Use local SSDs for best performance
+- Configure persistent volume provisioning
+- Avoid network-attached storage when possible
+
+### Network
+
+- PostgreSQL wire protocol is incompatible with SNI-based routing
+- Use a dedicated TCP load balancer for CockroachDB
+- Configure VPC peering for multi-region deployments
+
+## Start Kubernetes cluster
+
+<Tabs>
+  <Tab title="Google Kubernetes Engine (GKE)">
+    <Steps>
+      <Step title="Install prerequisites">
+        Install `gcloud` and `kubectl`:
+
+        ```bash
+        # Follow Google Cloud SDK installation instructions
+        gcloud components install kubectl
+        ```
+      </Step>
+
+      <Step title="Create cluster">
+        ```bash
+        gcloud container clusters create cockroachdb \
+          --machine-type n2-standard-4 \
+          --region us-east1 \
+          --num-nodes 1
+        ```
+
+        This creates a regional cluster with:
+        - Machine type: n2-standard-4 (4 vCPUs, 16 GB memory)
+        - One node per zone across 3 zones
+      </Step>
+
+      <Step title="Configure RBAC">
+        Get your Google Cloud email:
+
+        ```bash
+        gcloud info | grep Account
+        ```
+
+        Create cluster role binding:
+
+        ```bash
+        kubectl create clusterrolebinding $USER-cluster-admin-binding \
+          --clusterrole=cluster-admin \
+          --user=your.email@example.org
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="Amazon EKS">
+    <Steps>
+      <Step title="Install prerequisites">
+        Install AWS CLI, `eksctl`, and `kubectl`:
+
+        ```bash
+        # Follow AWS CLI and eksctl installation instructions
+        ```
+      </Step>
+
+      <Step title="Create cluster">
+        ```bash
+        eksctl create cluster \
+          --name cockroachdb \
+          --nodegroup-name standard-workers \
+          --node-type m6i.xlarge \
+          --nodes 3 \
+          --nodes-min 1 \
+          --nodes-max 4 \
+          --node-ami auto
+        ```
+
+        Cluster creation takes 10-15 minutes.
+      </Step>
+
+      <Step title="Verify cluster">
+        Check the AWS CloudFormation console for successful stack creation:
+        - `eksctl-cockroachdb-cluster`
+        - `eksctl-cockroachdb-nodegroup-standard-workers`
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="Azure Kubernetes Service (AKS)">
+    <Steps>
+      <Step title="Set environment variables">
+        ```bash
+        export MY_RESOURCE_GROUP_NAME=my-resource-group
+        export MY_AKS_CLUSTER_NAME=cockroachdb
+        ```
+      </Step>
+
+      <Step title="Create cluster">
+        ```bash
+        az aks create \
+          --resource-group $MY_RESOURCE_GROUP_NAME \
+          --name $MY_AKS_CLUSTER_NAME \
+          --node-count 3 \
+          --generate-ssh-keys
+        ```
+      </Step>
+
+      <Step title="Configure authentication">
+        For non-managed identity deployments, create a secret:
+
+        ```yaml
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: azure-cluster-identity-credentials-secret
+        type: Opaque
+        stringData:
+          azure-credentials: |
+            azure_tenant_id: {tenant-id}
+            azure_client_id: {client-id}
+            azure_client_secret: {client-secret}
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Deploy CockroachDB with Operator
+
+<Steps>
+  <Step title="Clone Helm repository">
+    ```bash
+    git clone https://github.com/cockroachdb/helm-charts.git
+    ```
+  </Step>
+
+  <Step title="Set environment variables">
+    ```bash
+    export CRDBOPERATOR=crdb-operator
+    export CRDBCLUSTER=cockroachdb
+    export NAMESPACE=cockroach-ns
+    ```
+  </Step>
+
+  <Step title="Install the Operator">
+    ```bash
+    kubectl create namespace $NAMESPACE
+    helm install $CRDBOPERATOR ./cockroachdb-parent/charts/operator -n $NAMESPACE
+    ```
+  </Step>
+
+  <Step title="Configure cluster values">
+    Edit `cockroachdb-parent/charts/cockroachdb/values.yaml`:
+
+    ```yaml
+    cockroachdb:
+      crdbCluster:
+        regions:
+          - code: us-central1
+            nodes: 3
+            cloudProvider: gcp
+            namespace: cockroach-ns
+    ```
+
+    <Tabs>
+      <Tab title="GCP">
+        ```yaml
+        cloudProvider: gcp
+        ```
+      </Tab>
+      <Tab title="AWS">
+        ```yaml
+        cloudProvider: aws
+        ```
+      </Tab>
+      <Tab title="Azure">
+        ```yaml
+        cloudProvider: azure
+        ```
+      </Tab>
+      <Tab title="Bare metal">
+        Remove the `cloudProvider` field entirely.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Configure resources">
+    Set CPU and memory limits:
+
+    ```yaml
+    cockroachdb:
+      crdbCluster:
+        podTemplate:
+          spec:
+            resources:
+              limits:
+                cpu: 4000m
+                memory: 16Gi
+              requests:
+                cpu: 4000m
+                memory: 16Gi
+    ```
+  </Step>
+
+  <Step title="Configure TLS certificates">
+    Choose a certificate method:
+
+    <Tabs>
+      <Tab title="Self-signed (default)">
+        ```yaml
+        cockroachdb:
+          tls:
+            enabled: true
+        ```
+
+        Certificates are automatically generated.
+      </Tab>
+
+      <Tab title="Custom CA">
+        Create CA certificate:
+
+        ```bash
+        mkdir certs my-safe-directory
+        cockroach cert create-ca \
+          --certs-dir=certs \
+          --ca-key=my-safe-directory/ca.key
+        ```
+
+        Configure values:
+
+        ```yaml
+        cockroachdb:
+          tls:
+            enabled: true
+            selfSigner:
+              enabled: true
+              caProvided: true
+              caSecret: {ca-secret-name}
+        ```
+      </Tab>
+
+      <Tab title="Manual certificates">
+        Create all certificates:
+
+        ```bash
+        mkdir certs my-safe-directory
+        cockroach cert create-ca --certs-dir=certs --ca-key=my-safe-directory/ca.key
+        cockroach cert create-client root --certs-dir=certs --ca-key=my-safe-directory/ca.key
+        kubectl create secret generic cockroachdb-root --from-file=certs
+        ```
+
+        Create node certificates:
+
+        ```bash
+        cockroach cert create-node \
+          localhost 127.0.0.1 \
+          my-release-cockroachdb-public \
+          my-release-cockroachdb-public.cockroach-ns \
+          *.my-release-cockroachdb \
+          *.my-release-cockroachdb.cockroach-ns.svc.cluster.local \
+          --certs-dir=certs \
+          --ca-key=my-safe-directory/ca.key
+        kubectl create secret generic cockroachdb-node --from-file=certs
+        ```
+
+        Configure values:
+
+        ```yaml
+        cockroachdb:
+          tls:
+            enabled: true
+            externalCertificates:
+              enabled: true
+              certificates:
+                nodeSecretName: cockroachdb-node
+                nodeClientSecretName: cockroachdb-root
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Configure localities">
+    Define locality mappings for replica distribution:
+
+    ```yaml
+    cockroachdb:
+      crdbCluster:
+        localityMappings:
+          - nodeLabel: "topology.kubernetes.io/region"
+            localityLabel: "region"
+          - nodeLabel: "topology.kubernetes.io/zone"
+            localityLabel: "zone"
+    ```
+
+    For custom localities:
+
+    ```yaml
+    cockroachdb:
+      crdbCluster:
+        localityMappings:
+          - nodeLabel: "topology.kubernetes.io/region"
+            localityLabel: "region"
+          - nodeLabel: "topology.kubernetes.io/zone"
+            localityLabel: "zone"
+          - nodeLabel: "example.datacenter.locality"
+            localityLabel: "dc"
+    ```
+  </Step>
+
+  <Step title="Install CockroachDB">
+    ```bash
+    helm install $CRDBCLUSTER ./cockroachdb-parent/charts/cockroachdb -n $NAMESPACE
+    ```
+
+    Verify pods are running:
+
+    ```bash
+    kubectl get pods -n $NAMESPACE
+    ```
+
+    Expected output:
+
+    ```
+    NAME                          READY   STATUS    RESTARTS   AGE
+    crdb-operator-655fbf7847-xxx  1/1     Running   0          10m
+    cockroachdb-0                 2/2     Running   0          45s
+    cockroachdb-1                 2/2     Running   0          45s
+    cockroachdb-2                 2/2     Running   0          45s
+    ```
+  </Step>
+</Steps>
+
+## Access the cluster
+
+### Use SQL client
+
+<Steps>
+  <Step title="Create client pod">
+    Download the client configuration:
+
+    ```bash
+    curl -O https://raw.githubusercontent.com/cockroachdb/helm-charts/master/examples/client-secure.yaml
+    ```
+
+    Edit the file and apply:
+
+    ```bash
+    kubectl create -f client-secure.yaml
+    ```
+  </Step>
+
+  <Step title="Connect to cluster">
+    ```bash
+    kubectl exec -it cockroachdb-client-secure \
+      -- ./cockroach sql \
+      --certs-dir=/cockroach/cockroach-certs \
+      --host=cockroachdb-public
+    ```
+  </Step>
+
+  <Step title="Run SQL commands">
+    ```sql
+    CREATE DATABASE bank;
+    CREATE TABLE bank.accounts (id INT PRIMARY KEY, balance DECIMAL);
+    INSERT INTO bank.accounts VALUES (1, 1000.50);
+    SELECT * FROM bank.accounts;
+    ```
+  </Step>
+</Steps>
+
+### Access DB Console
+
+<Steps>
+  <Step title="Create admin user">
+    ```sql
+    CREATE USER roach WITH PASSWORD 'Q7gc8rEdS';
+    GRANT admin TO roach;
+    ```
+  </Step>
+
+  <Step title="Port forward to service">
+    ```bash
+    kubectl port-forward service/cockroachdb-public 8080
+    ```
+  </Step>
+
+  <Step title="Access console">
+    Navigate to `https://localhost:8080` and log in with your credentials.
+  </Step>
+</Steps>
+
+## Multi-region deployment
+
+For multi-region clusters, configure multiple region definitions:
+
+```yaml
+cockroachdb:
+  clusterDomain: cluster.gke.gcp-us-east1
+  crdbCluster:
+    regions:
+      - code: us-central1
+        nodes: 3
+        cloudProvider: gcp
+        domain: cluster.gke.gcp-us-central1
+        namespace: cockroach-ns
+      - code: us-east1
+        nodes: 3
+        cloudProvider: gcp
+        domain: cluster.gke.gcp-us-east1
+        namespace: cockroach-ns
+```
+
+<Warning>
+  Multi-region deployments require:
+  - VPC peering between regions
+  - CoreDNS for cross-region service discovery
+  - Single CA certificate across all regions
+  - One operator deployment per region
+</Warning>
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Storage" icon="hard-drive">
+    - Use local SSDs instead of network-attached storage
+    - Provision sufficient IOPS for your workload
+    - Monitor disk usage regularly
+  </Card>
+
+  <Card title="Resources" icon="gauge-high">
+    - Set resource requests equal to limits
+    - Don't use burstable or shared-core instances
+    - Plan for 4 GiB RAM per vCPU
+  </Card>
+
+  <Card title="Topology" icon="sitemap">
+    - Spread pods across availability zones
+    - Use topology spread constraints
+    - Configure anti-affinity rules
+  </Card>
+
+  <Card title="Security" icon="shield">
+    - Always enable TLS for production
+    - Rotate certificates before expiration
+    - Use network policies to restrict access
+  </Card>
+</CardGroup>
+
+## Stop the cluster
+
+To delete the cluster:
+
+```bash
+helm uninstall $CRDBCLUSTER -n $NAMESPACE
+helm uninstall $CRDBOPERATOR -n $NAMESPACE
+kubectl delete namespace $NAMESPACE
+```
+
+To delete the Kubernetes cluster:
+
+<CodeGroup>
+  ```bash GKE
+  gcloud container clusters delete cockroachdb --region us-east1
+  ```
+
+  ```bash EKS
+  eksctl delete cluster --name cockroachdb
+  ```
+
+  ```bash AKS
+  az aks delete --resource-group $MY_RESOURCE_GROUP_NAME --name $MY_AKS_CLUSTER_NAME
+  ```
+</CodeGroup>
+
+<Warning>
+  Deleting the Kubernetes cluster without removing persistent volumes will leave them in your cloud project.
+</Warning>
+
+## Next steps
+
+- Configure [resource management](/operations/kubernetes-resources)
+- Set up [monitoring](/operations/kubernetes-monitoring)
+- Learn about [cluster scaling](/operations/kubernetes-scaling)
+- Review [performance optimization](/operations/kubernetes-performance)

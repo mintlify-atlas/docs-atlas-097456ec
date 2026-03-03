@@ -1,0 +1,148 @@
+---
+title: Migration Overview
+description: Learn how to migrate your database to CockroachDB using the MOLT toolkit for safe, minimal-downtime migrations.
+---
+
+The MOLT (Migrate Off Legacy Technology) toolkit enables safe, minimal-downtime database migrations to CockroachDB. MOLT combines schema transformation, distributed data load, continuous replication, and row-level validation into a highly configurable workflow that adapts to diverse production environments.
+
+## Migration sequence
+
+<Note>
+Before you begin the migration, review the [Migration Strategy](/migration/migration-strategy) guide.
+</Note>
+
+A migration to CockroachDB generally follows this sequence:
+
+<Steps>
+  <Step title="Prepare the source database">
+    Configure users, permissions, and replication settings as needed.
+  </Step>
+  
+  <Step title="Convert the source schema">
+    Use the Schema Conversion Tool to generate CockroachDB-compatible DDL. Apply the converted schema to the target database. Drop constraints and indexes to facilitate data load.
+  </Step>
+  
+  <Step title="Load data into CockroachDB">
+    Use MOLT Fetch to bulk-ingest your source data.
+  </Step>
+  
+  <Step title="Verify consistency (optional)">
+    Use MOLT Verify to confirm that the data loaded into CockroachDB is consistent with the source.
+  </Step>
+  
+  <Step title="Finalize target schema">
+    Recreate indexes or constraints on CockroachDB that you previously dropped to facilitate data load.
+  </Step>
+  
+  <Step title="Replicate ongoing changes">
+    Enable continuous replication with MOLT Replicator to keep CockroachDB in sync with the source.
+  </Step>
+  
+  <Step title="Verify consistency before cutover">
+    Use MOLT Verify to confirm that the CockroachDB data is consistent with the source.
+  </Step>
+  
+  <Step title="Cut over to CockroachDB">
+    Redirect application traffic to the CockroachDB cluster.
+  </Step>
+</Steps>
+
+## MOLT tools
+
+MOLT is a set of tools for schema conversion, data load, replication, and validation. Migrations with MOLT are resilient, restartable, and scalable to large data sets.
+
+### Schema Conversion Tool
+
+The MOLT Schema Conversion Tool converts a source database schema to a CockroachDB-compatible schema. The tool performs the following actions:
+
+- Identifies unimplemented features
+- Rewrites unsupported DDL syntax
+- Applies CockroachDB schema best practices
+
+**Supported sources:** PostgreSQL, MySQL, Oracle, SQL Server
+
+**Release status:** GA (Cloud only)
+
+### MOLT Fetch
+
+MOLT Fetch performs the initial data load to CockroachDB. It supports:
+
+- Multiple migration flows via `IMPORT INTO` or `COPY FROM`
+- Data movement via cloud storage, local file servers, or direct copy
+- Concurrent data export from multiple source tables and shards
+- Schema transformation rules
+- Safe continuation to retry failed or interrupted tasks from specific checkpoints
+
+**Supported sources:** PostgreSQL 11-16, MySQL 5.7-8.0+, Oracle Database 19c (Enterprise Edition) and 21c (Express Edition), CockroachDB
+
+**Release status:** GA
+
+### MOLT Replicator
+
+MOLT Replicator provides continuous replication capabilities for minimal-downtime migrations. It supports:
+
+- Continuous replication from source databases to CockroachDB
+- Multiple consistency modes for balancing throughput and transactional guarantees
+- Failback replication from CockroachDB back to source databases
+- Performance tuning for high-throughput workloads
+
+**Supported sources:** CockroachDB, PostgreSQL 11-16, MySQL 5.7+ and 8.0+, Oracle Database 19c+
+
+**Release status:** GA
+
+### MOLT Verify
+
+MOLT Verify checks for data and schema discrepancies between the source database and CockroachDB. It performs the following verifications:
+
+- Table structure
+- Column definition
+- Row-level data
+
+**Supported sources:** PostgreSQL 12-16, MySQL 5.7-8.0+, Oracle Database 19c (Enterprise Edition) and 21c (Express Edition), CockroachDB
+
+**Release status:** Preview
+
+## Migration flows
+
+MOLT supports various migration flows using MOLT Fetch for data loading and MOLT Replicator for ongoing replication.
+
+| Migration flow | Tools | Description | Best for |
+|---------------|-------|-------------|----------|
+| **Bulk load** | MOLT Fetch | Perform a one-time bulk load of source data into CockroachDB. | Testing, migrations with planned downtime |
+| **Data load and replication** | MOLT Fetch + MOLT Replicator | Load source data with Fetch, then replicate subsequent changes continuously with Replicator. | Minimal downtime migrations |
+| **Resume replication** | MOLT Replicator | Resume replication from a checkpoint after interruption. | Resuming interrupted migrations, post-load sync |
+| **Failback** | MOLT Replicator | Replicate changes from CockroachDB back to the source database. | Rollback scenarios |
+
+### Bulk load
+
+For migrations that tolerate downtime, use MOLT Fetch in `data-load` mode to perform a one-time bulk load of source data into CockroachDB.
+
+### Migrations with minimal downtime
+
+To minimize downtime during migration, use MOLT Fetch for initial data loading followed by MOLT Replicator for continuous replication. Instead of loading all data during a planned downtime window, you can run an initial load followed by continuous replication. Writes are paused only briefly to allow replication to drain before the final cutover.
+
+The duration of this pause depends on the volume of write traffic and the replication lag between the source and CockroachDB.
+
+### Recovery and rollback strategies
+
+If the migration is interrupted or cutover must be aborted, MOLT Replicator provides safe recovery options:
+
+- **Resume replication**: Resume a previously interrupted replication stream
+- **Failback mode**: Reverse the migration, synchronizing changes from CockroachDB back to the original source. This ensures data consistency on the source so that you can retry the migration later.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="PostgreSQL Migration" icon="database" href="/migration/postgres-migration">
+    Migrate from PostgreSQL to CockroachDB
+  </Card>
+  <Card title="MySQL Migration" icon="database" href="/migration/mysql-migration">
+    Migrate from MySQL to CockroachDB
+  </Card>
+  <Card title="Migration Strategy" icon="map" href="/migration/migration-strategy">
+    Plan your migration approach
+  </Card>
+  <Card title="Schema Design" icon="diagram-project" href="/migration/schema-design">
+    Best practices for schema design
+  </Card>
+</CardGroup>

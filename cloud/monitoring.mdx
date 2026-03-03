@@ -1,0 +1,543 @@
+---
+title: Monitoring CockroachDB Cloud Clusters
+description: Learn how to monitor the performance and health of your CockroachDB Cloud clusters.
+---
+
+Monitor your CockroachDB Cloud cluster's performance, health, and resource usage using built-in tools and integrations with third-party monitoring platforms.
+
+## Monitoring Options
+
+CockroachDB Cloud provides multiple ways to monitor your clusters:
+
+1. **Cloud Console Metrics**: Built-in performance dashboards
+2. **Exported Metrics**: Integration with Datadog, Prometheus, and CloudWatch
+3. **SQL Activity**: Query performance and insights
+4. **Alerts**: Automated notifications for issues
+
+## Cloud Console Metrics
+
+All CockroachDB Cloud plans include access to performance metrics in the Cloud Console.
+
+### Access Metrics
+
+<Steps>
+  <Step title="Navigate to Metrics">
+    1. Select your cluster
+    2. Click **Metrics** in the left navigation
+  </Step>
+  
+  <Step title="Select Tab">
+    Choose from available metric categories:
+    - **Overview**: High-level cluster health
+    - **SQL**: Query performance
+    - **Request Units**: RU consumption (Basic/Standard)
+    - **Changefeeds**: CDC performance
+    - **Row-Level TTL**: TTL job metrics
+    - **Custom**: Create custom charts
+  </Step>
+  
+  <Step title="Select Time Range">
+    Use the time selector to view metrics for:
+    - Last hour
+    - Last 6 hours
+    - Last 12 hours
+    - Last 24 hours
+    - Last 7 days
+    - Custom range
+  </Step>
+</Steps>
+
+### Overview Metrics
+
+Key cluster health indicators:
+
+**CPU Usage:**
+- Shows SQL and storage CPU utilization
+- Alert if consistently >70%
+- Scale up if sustained high usage
+
+**SQL Statements:**
+- Queries per second (QPS)
+- Statement latency percentiles (P50, P90, P99)
+- Identify traffic patterns and spikes
+
+**Storage:**
+- Used storage across cluster
+- Storage capacity (Advanced only)
+- Growth trends
+
+**SQL Connections:**
+- Active SQL connections
+- New connection attempts
+- Monitor for connection pool issues
+
+**Request Units (Basic/Standard):**
+- RU consumption rate
+- Breakdown by resource type
+- Track against provisioned capacity
+
+### SQL Metrics
+
+Detailed query performance:
+
+**Statement Execution:**
+- Total statements executed
+- Breakdown by statement type (SELECT, INSERT, UPDATE, DELETE)
+- Execution latency by percentile
+
+**Transaction Performance:**
+- Transaction count
+- Transaction latency
+- Contention events
+- Retries and errors
+
+**Connection Activity:**
+- Active connections
+- Idle connections
+- Connection rate
+
+### Changefeed Metrics
+
+Monitor change data capture:
+
+**Throughput:**
+- Messages emitted per second
+- Bytes emitted per second
+
+**Latency:**
+- Commit-to-emit latency
+- Queue processing time
+
+**Status:**
+- Running changefeeds
+- Failed changefeeds
+- Checkpoint progress
+
+## Export Metrics
+
+Standard and Advanced clusters can export metrics to external monitoring platforms.
+
+### Supported Platforms
+
+<CardGroup cols={3}>
+  <Card title="Datadog" icon="chart-line">
+    Full-featured monitoring and alerting
+  </Card>
+  
+  <Card title="Prometheus" icon="server">
+    Open-source monitoring and time-series database
+  </Card>
+  
+  <Card title="CloudWatch" icon="aws">
+    AWS native monitoring service
+  </Card>
+</CardGroup>
+
+### Export to Datadog
+
+<Steps>
+  <Step title="Get Datadog API Key">
+    1. Log in to Datadog
+    2. Navigate to **Organization Settings** > **API Keys**
+    3. Create or copy an API key
+  </Step>
+  
+  <Step title="Configure Export">
+    In CockroachDB Cloud Console:
+    1. Go to cluster **Monitoring** > **Metrics Export**
+    2. Click **Add Integration**
+    3. Select **Datadog**
+    4. Enter API key and select region
+    5. Click **Save**
+  </Step>
+  
+  <Step title="View in Datadog">
+    Metrics appear in Datadog within 5 minutes under the `crdb` namespace
+  </Step>
+</Steps>
+
+**Available Metrics:**
+- `crdb.capacity.available`
+- `crdb.capacity.used`
+- `crdb.sql.conns`
+- `crdb.sql.query.count`
+- `crdb.sql.query.latency`
+- Plus 100+ additional metrics
+
+### Export to Prometheus
+
+<Steps>
+  <Step title="Enable Metrics Export">
+    1. Navigate to **Monitoring** > **Metrics Export**
+    2. Click **Add Integration**
+    3. Select **Prometheus**
+  </Step>
+  
+  <Step title="Get Scrape Configuration">
+    Copy the provided Prometheus scrape configuration:
+    
+    ```yaml
+    scrape_configs:
+      - job_name: 'cockroachdb-cloud'
+        static_configs:
+          - targets: ['cluster-id.crdb.io:8080']
+        metrics_path: '/api/v2/prometheus/'
+        bearer_token: 'your-bearer-token'
+    ```
+  </Step>
+  
+  <Step title="Configure Prometheus">
+    Add the scrape configuration to your `prometheus.yml` file
+  </Step>
+  
+  <Step title="Verify Collection">
+    Check Prometheus targets page to confirm metrics collection
+  </Step>
+</Steps>
+
+### Export to CloudWatch
+
+For Advanced clusters on AWS:
+
+<Steps>
+  <Step title="Create IAM Role">
+    Create an IAM role with permissions to write to CloudWatch
+  </Step>
+  
+  <Step title="Configure Export">
+    1. Go to **Monitoring** > **Metrics Export**
+    2. Select **CloudWatch**
+    3. Enter role ARN and log group name
+    4. Click **Save**
+  </Step>
+  
+  <Step title="View in CloudWatch">
+    Metrics appear in CloudWatch within 5 minutes
+  </Step>
+</Steps>
+
+## SQL Activity Monitoring
+
+Monitor individual query performance and identify issues.
+
+### Statements Page
+
+View and analyze SQL statement performance:
+
+<Steps>
+  <Step title="Access Statements">
+    Click **SQL Activity** > **Statements** in cluster navigation
+  </Step>
+  
+  <Step title="Review Statements">
+    View statements sorted by:
+    - Execution count
+    - Rows processed
+    - Bytes read
+    - Latency (P50, P90, P99)
+    - Contention time
+  </Step>
+  
+  <Step title="Analyze Statement">
+    Click any statement to view:
+    - Full statement text
+    - Execution plan
+    - Performance statistics
+    - Resource consumption
+    - Execution history
+  </Step>
+</Steps>
+
+**Key Metrics:**
+- **Execution Count**: How often the query runs
+- **Rows Read**: Amount of data scanned
+- **Latency**: Query response time
+- **Contention**: Lock wait time
+
+### Transactions Page
+
+Monitor transaction-level performance:
+
+- Transaction count and rate
+- Transaction latency percentiles
+- Retry counts
+- Contention events
+- Transaction breakdown by statement
+
+### Insights Page
+
+Automatic performance recommendations:
+
+**Available Insights:**
+- High retry counts
+- Queries with sub-optimal indexes
+- Schema design issues
+- Transaction contention
+- Performance bottlenecks
+
+<Steps>
+  <Step title="View Insights">
+    Click **SQL Activity** > **Insights**
+  </Step>
+  
+  <Step title="Review Recommendations">
+    Each insight includes:
+    - Problem description
+    - Affected queries
+    - Recommended solution
+    - Estimated impact
+  </Step>
+  
+  <Step title="Take Action">
+    Implement recommended fixes and monitor improvement
+  </Step>
+</Steps>
+
+## Alerts and Notifications
+
+Configure automated alerts for cluster issues.
+
+### Built-in Alerts
+
+Organization Admins automatically receive alerts for:
+
+- **Planned Maintenance**: Upcoming updates and maintenance
+- **Performance Issues**: High CPU, memory, or storage usage
+- **Cluster Problems**: Node failures, replication issues
+- **Backup Failures**: Failed backup jobs
+
+### Configure Alert Recipients
+
+<Steps>
+  <Step title="Navigate to Alerts">
+    Click **Alerts** in the cluster navigation
+  </Step>
+  
+  <Step title="Add Recipients">
+    1. Click **Add recipient**
+    2. Enter email address
+    3. Select alert types
+    4. Click **Save**
+  </Step>
+  
+  <Step title="Test Alerts">
+    Click **Send test alert** to verify configuration
+  </Step>
+</Steps>
+
+### Alert Types
+
+| Alert Type | Description | Severity |
+|------------|-------------|----------|
+| **Cluster unavailable** | Cluster not responding | Critical |
+| **High CPU** | CPU usage >80% for 30+ min | Warning |
+| **Low storage** | Storage >85% full | Warning |
+| **Backup failed** | Backup job failed | Warning |
+| **Node down** | Node unreachable | Critical |
+| **High memory** | Memory usage >90% | Warning |
+
+### External Alerting
+
+Integrate with external alerting platforms:
+
+**Via Exported Metrics:**
+- Set up alerts in Datadog, Prometheus, or CloudWatch
+- Define custom thresholds and notification rules
+- Combine with application metrics
+
+**Via Cloud API:**
+- Poll cluster status endpoints
+- Implement custom alerting logic
+- Integrate with PagerDuty, Opsgenie, etc.
+
+## Essential Metrics by Plan
+
+### Basic Cluster Metrics
+
+Focus on these metrics for Basic clusters:
+
+1. **Request Units**: Monitor RU consumption and spend limit
+2. **SQL Statements**: Track query volume and latency
+3. **Storage**: Monitor data growth
+4. **Connections**: Ensure proper connection pooling
+
+### Standard Cluster Metrics
+
+Key metrics for Standard clusters:
+
+1. **Provisioned Capacity**: Monitor against actual CPU usage
+2. **Request Units**: Track RU consumption by resource type
+3. **SQL Performance**: Query latency and throughput
+4. **Storage**: Monitor usage and growth rate
+5. **Cross-Region Traffic**: Optimize for cost
+
+### Advanced Cluster Metrics
+
+Important metrics for Advanced clusters:
+
+1. **Node Health**: Individual node CPU, memory, storage
+2. **Replication**: Replica distribution and health
+3. **SQL Performance**: Query and transaction latency
+4. **Storage IOPS**: I/O performance (AWS)
+5. **Network**: Inter-node and cross-region traffic
+
+## DB Console (Advanced Only)
+
+Advanced clusters have access to the DB Console for detailed monitoring.
+
+### Access DB Console
+
+<Steps>
+  <Step title="Authorize Network">
+    Add your IP address to the allowlist with DB Console access
+  </Step>
+  
+  <Step title="Open DB Console">
+    1. Go to **Tools** page
+    2. Click **Open DB Console**
+    3. Authenticate with SQL credentials
+  </Step>
+</Steps>
+
+### DB Console Features
+
+**Overview:**
+- Cluster topology visualization
+- Node status and health
+- Live traffic metrics
+
+**Metrics:**
+- 100+ detailed performance metrics
+- Customizable time ranges
+- Per-node breakdowns
+
+**SQL Activity:**
+- Live statement execution
+- Transaction details
+- Contention analysis
+
+**Databases:**
+- Database and table details
+- Index usage statistics
+- Schema information
+
+**Jobs:**
+- Running and completed jobs
+- Backup/restore progress
+- Changefeed status
+
+**Advanced Debug:**
+- Range distribution
+- Raft status
+- Node logs
+- Cluster events
+
+## Monitoring Best Practices
+
+### Establish Baselines
+
+<Steps>
+  <Step title="Collect Data">
+    Monitor metrics during normal operation for 1-2 weeks
+  </Step>
+  
+  <Step title="Identify Patterns">
+    Document typical values for:
+    - Peak and off-peak hours
+    - Daily/weekly patterns
+    - Normal CPU and memory usage
+    - Typical query latency
+  </Step>
+  
+  <Step title="Set Thresholds">
+    Create alerts based on deviations from baseline
+  </Step>
+</Steps>
+
+### Monitor Trends
+
+Track changes over time:
+
+- **Storage Growth**: Plan capacity increases
+- **Query Volume**: Anticipate scaling needs
+- **Latency Trends**: Identify degradation early
+- **Error Rates**: Catch issues before they escalate
+
+### Regular Reviews
+
+Schedule monitoring reviews:
+
+- **Daily**: Check for alerts and anomalies
+- **Weekly**: Review performance trends
+- **Monthly**: Analyze capacity and optimization opportunities
+- **Quarterly**: Audit monitoring coverage and alerts
+
+### Key Performance Indicators
+
+Track these KPIs:
+
+| KPI | Target | Action Threshold |
+|-----|--------|------------------|
+| CPU Utilization | Under 70% | Over 80% for 30 min |
+| Query P99 Latency | Under 100ms | Over 200ms |
+| Error Rate | Under 0.1% | Over 1% |
+| Storage Usage | Under 80% | Over 85% |
+| Connection Count | Under 500 | Over 1000 |
+
+## Troubleshooting with Metrics
+
+### High CPU Usage
+
+**Investigate:**
+1. Check SQL Statements for expensive queries
+2. Review Insights for optimization opportunities
+3. Look for query volume spikes
+
+**Solutions:**
+- Optimize expensive queries
+- Add indexes
+- Scale up capacity
+
+### High Latency
+
+**Investigate:**
+1. Check transaction contention
+2. Review query execution plans
+3. Analyze network latency (multi-region)
+
+**Solutions:**
+- Reduce transaction scope
+- Optimize queries
+- Adjust table localities
+
+### Storage Growth
+
+**Investigate:**
+1. Review database and table sizes
+2. Check for data retention policies
+3. Look for unexpected data growth
+
+**Solutions:**
+- Implement TTL for old data
+- Archive historical data
+- Compress large columns
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Performance Tuning" icon="gauge-high" href="https://www.cockroachlabs.com/docs/stable/performance-best-practices-overview">
+    Optimize cluster performance
+  </Card>
+  
+  <Card title="SQL Activity" icon="database" href="https://www.cockroachlabs.com/docs/cockroachcloud/statements-page">
+    Analyze query performance
+  </Card>
+  
+  <Card title="Scaling" icon="arrow-up-right-dots" href="/cloud/scaling">
+    Learn when and how to scale
+  </Card>
+  
+  <Card title="Alerting" icon="bell" href="https://www.cockroachlabs.com/docs/cockroachcloud/alerts-page">
+    Configure alerts
+  </Card>
+</CardGroup>

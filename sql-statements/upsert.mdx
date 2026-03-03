@@ -1,0 +1,254 @@
+---
+title: UPSERT
+description: Insert rows when values don't violate uniqueness constraints, and update rows when values do violate them.
+---
+
+The `UPSERT` statement inserts rows in cases where specified values do not violate uniqueness constraints and updates rows in cases where values do violate uniqueness constraints. `UPSERT` considers uniqueness only for primary key columns.
+
+## UPSERT vs. INSERT ON CONFLICT
+
+Assuming that columns `a` and `b` are the primary key, the following `UPSERT` and `INSERT ... ON CONFLICT` statements are equivalent:
+
+```sql
+UPSERT INTO t (a, b, c) VALUES (1, 2, 3);
+```
+
+```sql
+INSERT INTO t (a, b, c)
+  VALUES (1, 2, 3)
+  ON CONFLICT (a, b)
+  DO UPDATE SET c = excluded.c;
+```
+
+However, `UPSERT` does not let you specify columns to infer a unique constraint as an arbiter. `UPSERT` always uses the primary key as the arbiter. You must therefore use `INSERT ... ON CONFLICT ... DO UPDATE` if your statement considers uniqueness for columns other than primary key columns.
+
+## Considerations
+
+- An `UPSERT` statement affecting a proper subset of columns behaves differently depending on whether or not you specify the target columns:
+  - If you specify target columns (e.g., `UPSERT INTO accounts (id, name) VALUES (2, 'b2');`), the values of columns that do not have new values will not be updated.
+  - If you do not specify target columns (e.g., `UPSERT INTO accounts VALUES (2, 'b2');`), the value of columns that do not have new values will be updated to their default values.
+
+- A single multi-row `UPSERT` statement is faster than multiple single-row `UPSERT` statements. Whenever possible, use multi-row `UPSERT` instead of multiple single-row `UPSERT` statements.
+
+## Required privileges
+
+You must have the `INSERT`, `SELECT`, and `UPDATE` privileges on the table.
+
+## Syntax
+
+```sql
+[WITH common_table_expr [, ...]]
+UPSERT INTO table_name [(column_name [, ...])]
+  {DEFAULT VALUES | select_stmt | VALUES (value [, ...]) [, ...]}
+  [RETURNING ...];
+```
+
+## Parameters
+
+<ParamField path="common_table_expr" type="expression">
+  See Common Table Expressions.
+</ParamField>
+
+<ParamField path="table_name" type="identifier">
+  The name of the table.
+</ParamField>
+
+<ParamField path="AS table_alias_name" type="alias">
+  An alias for the table name. When an alias is provided, it completely hides the actual table name.
+</ParamField>
+
+<ParamField path="column_name" type="identifier">
+  The name of a column to populate during the upsert.
+</ParamField>
+
+<ParamField path="select_stmt" type="query">
+  A selection query. Each value must match the data type of its column. If column names are listed after `INTO`, values must be in corresponding order; otherwise, they must follow the declared order of the columns in the table.
+</ParamField>
+
+<ParamField path="DEFAULT VALUES" type="keyword">
+  To fill all columns with their default values, use `DEFAULT VALUES` in place of `select_stmt`. To fill a specific column with its default value, leave the value out of the `select_stmt` or use `DEFAULT` at the appropriate position.
+</ParamField>
+
+<ParamField path="RETURNING target_list" type="clause">
+  Return values based on rows upserted, where `target_list` can be specific column names from the table, `*` for all columns, or computations using scalar expressions.
+  
+  Within a transaction, use `RETURNING NOTHING` to return nothing in the response, not even the number of rows affected.
+</ParamField>
+
+## Examples
+
+### Upsert a row (no conflict)
+
+In this example, the `id` column is the primary key. Because the inserted `id` value does not conflict with any existing row, the `UPSERT` statement inserts a new row.
+
+```sql
+SELECT * FROM accounts;
+```
+
+```
+  id | balance  
+-----+----------
+   1 |  10000.5 
+   2 | 20000.75 
+```
+
+```sql
+UPSERT INTO accounts (id, balance) VALUES (3, 6325.20);
+```
+
+```sql
+SELECT * FROM accounts;
+```
+
+```
+  id | balance  
+-----+----------
+   1 |  10000.5 
+   2 | 20000.75 
+   3 |   6325.2 
+```
+
+### Upsert multiple rows
+
+```sql
+UPSERT INTO accounts (id, balance) VALUES (4, 1970.4), (5, 2532.9), (6, 4473.0);
+```
+
+```sql
+SELECT * FROM accounts;
+```
+
+```
+  id | balance  
+-----+----------
+   1 |  10000.5 
+   2 | 20000.75 
+   3 |   6325.2 
+   4 |   1970.4 
+   5 |   2532.9 
+   6 |   4473.0 
+```
+
+### Upsert that updates a row (conflict on primary key)
+
+In this example, the `id` column is the primary key. Because the inserted `id` value is not unique, the `UPSERT` statement updates the row with the new `balance`.
+
+```sql
+SELECT * FROM accounts;
+```
+
+```
+  id | balance  
+-----+----------
+   1 |  10000.5 
+   2 | 20000.75 
+   3 |   6325.2 
+```
+
+```sql
+UPSERT INTO accounts (id, balance) VALUES (3, 7500.83);
+```
+
+```sql
+SELECT * FROM accounts;
+```
+
+```
+  id | balance  
+-----+----------
+   1 |  10000.5 
+   2 | 20000.75 
+   3 |  7500.83 
+```
+
+### Upsert that fails (conflict on non-primary key)
+
+`UPSERT` will not update rows when the uniqueness conflict is on columns not in the primary key. In this example, the `a` column is the primary key, but the `b` column also has the `UNIQUE` constraint.
+
+```sql
+SELECT * FROM unique_test;
+```
+
+```
+  a | b 
+----+---
+  1 | 1 
+  2 | 2 
+  3 | 3 
+```
+
+```sql
+UPSERT INTO unique_test VALUES (4, 1);
+```
+
+```
+pq: duplicate key value (b)=(1) violates unique constraint "unique_test_b_key"
+```
+
+In such a case, you would need to use the `INSERT ON CONFLICT` statement:
+
+```sql
+INSERT INTO unique_test VALUES (4, 1) 
+  ON CONFLICT (b) 
+  DO UPDATE SET a = excluded.a;
+```
+
+### Upsert a proper subset of columns
+
+```sql
+CREATE TABLE accounts (
+  id INT PRIMARY KEY,
+  name STRING,
+  balance DECIMAL(10, 2) DEFAULT 0
+);
+```
+
+```sql
+INSERT INTO accounts (id, name, balance) VALUES
+  (1, 'a1', 10000.5),
+  (2, 'b1', 20000.75),
+  (3, 'c1',  6325.2);
+```
+
+Upserting without specifying column names will write default values:
+
+```sql
+UPSERT INTO accounts VALUES (1, 'a2');
+```
+
+```sql
+SELECT * FROM accounts;
+```
+
+```
+  id | name | balance  
+-----+------+----------
+   1 |   a2 |     0.00 
+   2 |   b1 | 20000.75 
+   3 |   c1 |  6325.20 
+```
+
+Upserting with specific column names preserves unspecified columns:
+
+```sql
+UPSERT INTO accounts (id, name) VALUES (2, 'b2');
+```
+
+```sql
+SELECT * FROM accounts;
+```
+
+```
+  id | name | balance  
+-----+------+----------
+   1 |   a2 |     0.00 
+   2 |   b2 | 20000.75 
+   3 |   c1 |  6325.20 
+```
+
+## See also
+
+- INSERT
+- UPDATE
+- DELETE
+- SELECT

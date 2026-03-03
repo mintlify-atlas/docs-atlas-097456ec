@@ -1,0 +1,259 @@
+---
+title: Building Applications with CockroachDB
+description: Learn how to build applications with CockroachDB using your preferred language and framework
+---
+
+You can build applications with CockroachDB using various programming languages and frameworks. CockroachDB supports both native drivers and the PostgreSQL wire protocol, making it compatible with most PostgreSQL client drivers and ORM frameworks.
+
+## Getting Started
+
+Building an application with CockroachDB involves three main steps:
+
+<Steps>
+  <Step title="Install a client driver or ORM">
+    Choose a driver or ORM framework for your programming language. CockroachDB provides full or partial support for popular options across multiple languages.
+  </Step>
+  
+  <Step title="Connect to your cluster">
+    Use a connection string to establish a connection from your application to your CockroachDB cluster. Connection strings include your username, password, host, port, and database name.
+  </Step>
+  
+  <Step title="Execute database operations">
+    Perform CRUD operations (Create, Read, Update, Delete) using your chosen driver or ORM. Implement transaction retry logic for production applications.
+  </Step>
+</Steps>
+
+## Choose Your Language
+
+Select a programming language to start building your application:
+
+<CardGroup cols={3}>
+  <Card title="JavaScript/TypeScript" icon="js" href="/developer/client-drivers#javascripttypescript">
+    Build apps with Node.js using drivers like pg, or ORMs like Prisma, Sequelize, and TypeORM
+  </Card>
+  
+  <Card title="Python" icon="python" href="/developer/client-drivers#python">
+    Use psycopg2/psycopg3 drivers or popular ORMs like SQLAlchemy and Django
+  </Card>
+  
+  <Card title="Go" icon="golang" href="/developer/client-drivers#go">
+    Connect with pgx or pq drivers, or use GORM for object-relational mapping
+  </Card>
+  
+  <Card title="Java" icon="java" href="/developer/client-drivers#java">
+    Build enterprise apps with JDBC, Hibernate, or jOOQ frameworks
+  </Card>
+  
+  <Card title="Ruby" icon="gem" href="/developer/client-drivers#ruby">
+    Use the pg driver or Active Record ORM for Ruby applications
+  </Card>
+  
+  <Card title="C# / .NET" icon="microsoft" href="/developer/client-drivers#c-net">
+    Connect with the Npgsql driver for .NET applications
+  </Card>
+</CardGroup>
+
+## Example Applications
+
+We provide complete, runnable example applications that demonstrate:
+
+- Establishing database connections
+- Creating tables and inserting data
+- Executing transactions with retry logic
+- Performing CRUD operations
+- Following best practices for production apps
+
+Each example is available in a GitHub repository with instructions for running locally.
+
+### JavaScript/TypeScript Examples
+
+<Tabs>
+  <Tab title="Node.js (pg)">
+    A simple CRUD application using the node-postgres driver.
+    
+    ```bash
+    git clone https://github.com/cockroachlabs/example-app-node-postgres
+    cd example-app-node-postgres
+    npm install
+    node app.js
+    ```
+    
+    **Features:**
+    - Connection pooling
+    - Transaction retry logic with exponential backoff
+    - INSERT, SELECT, UPDATE, and DELETE operations
+  </Tab>
+  
+  <Tab title="Prisma">
+    Modern TypeScript-first ORM with type safety.
+    
+    ```bash
+    npm install prisma
+    npx prisma init
+    ```
+    
+    **Features:**
+    - Type-safe database client
+    - Automatic migrations
+    - Intuitive data modeling
+  </Tab>
+</Tabs>
+
+### Python Examples
+
+<Tabs>
+  <Tab title="psycopg2">
+    Simple application using the psycopg2 driver.
+    
+    ```bash
+    pip install psycopg2-binary
+    python example.py
+    ```
+    
+    **Key concepts:**
+    - Connection string configuration
+    - Transaction management
+    - Application-level retry logic with exponential backoff
+  </Tab>
+  
+  <Tab title="SQLAlchemy">
+    ORM-based application with the CockroachDB dialect.
+    
+    ```bash
+    pip install sqlalchemy sqlalchemy-cockroachdb psycopg2
+    ```
+    
+    **Key concepts:**
+    - Using the `run_transaction()` helper function
+    - Object-relational mapping
+    - Automatic transaction retries
+  </Tab>
+</Tabs>
+
+### Go Examples
+
+<Tabs>
+  <Tab title="pgx Driver">
+    High-performance PostgreSQL driver for Go.
+    
+    ```go
+    import "github.com/jackc/pgx/v5"
+    ```
+    
+    **Features:**
+    - Native Go implementation
+    - Connection pooling
+    - Prepared statements
+  </Tab>
+  
+  <Tab title="GORM">
+    Feature-rich ORM for Go developers.
+    
+    ```go
+    import "gorm.io/gorm"
+    ```
+    
+    **Features:**
+    - Auto migrations
+    - Association handling
+    - Hooks and callbacks
+  </Tab>
+</Tabs>
+
+### Java Examples
+
+<Tabs>
+  <Tab title="JDBC">
+    Standard Java database connectivity.
+    
+    ```bash
+    ./gradlew run
+    ```
+    
+    **Best practices:**
+    - Use `reWriteBatchedInserts=true` for 2-3x performance improvement
+    - Batch size of 128 for optimal performance
+    - Connection pooling
+  </Tab>
+  
+  <Tab title="Hibernate">
+    Full-featured ORM for Java applications.
+    
+    **Requirements:**
+    - Hibernate 5.4.19 or later (includes CockroachDB dialect)
+    - PostgreSQL JDBC driver
+  </Tab>
+</Tabs>
+
+## Common Patterns
+
+### Connection String Format
+
+Most drivers accept PostgreSQL-style connection strings:
+
+```
+postgresql://username:password@host:port/database?options
+```
+
+### Transaction Retry Logic
+
+CockroachDB may require clients to retry transactions due to contention. All production applications should implement retry logic:
+
+<CodeGroup>
+```javascript Node.js
+async function retryTxn(txnFunc, maxRetries = 15) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await txnFunc();
+    } catch (err) {
+      if (err.code !== '40001') throw err;
+      await sleep(Math.pow(2, i) * 100);
+    }
+  }
+}
+```
+
+```python Python
+def run_transaction(sessionmaker, callback):
+    with sessionmaker() as session:
+        for retry in range(15):
+            try:
+                result = callback(session)
+                session.commit()
+                return result
+            except Exception as e:
+                session.rollback()
+                if retry >= 14:
+                    raise
+                time.sleep(2 ** retry * 0.1)
+```
+
+```go Go
+import crdbpgx "github.com/cockroachdb/cockroach-go/v2/crdb/crdbpgxv5"
+
+crdbpgx.ExecuteTx(ctx, conn, pgx.TxOptions{}, func(tx pgx.Tx) error {
+    // Your transaction logic here
+    return nil
+})
+```
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Client Drivers" icon="plug" href="/developer/client-drivers">
+    View the complete list of supported drivers and ORMs
+  </Card>
+  
+  <Card title="ORM Support" icon="database" href="/developer/orms">
+    Learn about ORM frameworks and best practices
+  </Card>
+  
+  <Card title="Best Practices" icon="star" href="/developer/best-practices">
+    Follow recommended patterns for production applications
+  </Card>
+  
+  <Card title="Performance Tuning" icon="gauge">
+    Optimize your application's database queries
+  </Card>
+</CardGroup>

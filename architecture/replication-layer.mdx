@@ -1,0 +1,196 @@
+---
+title: Replication layer
+description: The replication layer copies data between nodes and ensures consistency between copies.
+---
+
+The replication layer of CockroachDB's architecture copies data between nodes and ensures consistency between these copies by implementing a consensus algorithm.
+
+<Info>
+If you haven't already, we recommend reading the [architecture overview](/architecture/overview).
+</Info>
+
+## Overview
+
+High availability requires that your database can tolerate nodes going offline without interrupting service to your application. This means replicating data between nodes to ensure the data remains accessible.
+
+Ensuring consistency with nodes offline, though, is a challenge many databases fail. To solve this problem, CockroachDB uses a consensus algorithm to require that a quorum of replicas agrees on any changes to a range before those changes are committed. Because 3 is the smallest number that can achieve quorum (i.e., 2 out of 3), CockroachDB's high availability (known as multi-active availability) requires 3 nodes.
+
+The number of failures that can be tolerated is equal to **(Replication factor - 1) / 2**. For example, with 3x replication, one failure can be tolerated; with 5x replication, two failures, and so on. You can control the replication factor at the cluster, database, and table level using replication zones.
+
+When failures happen, CockroachDB automatically realizes nodes have stopped responding and works to redistribute your data to continue maximizing survivability. This process also works the other way around: when new nodes join your cluster, data automatically rebalances onto it, ensuring your load is evenly distributed.
+
+## Raft consensus protocol
+
+Raft is a consensus protocol—an algorithm which makes sure that your data is safely stored on multiple machines, and that those machines agree on the current state even if some of them are temporarily disconnected.
+
+Raft organizes all nodes that contain a replica of a range into a group—called a Raft group. Each replica in a Raft group is either a "leader" or a "follower". The leader, which is elected by Raft and long-lived, coordinates all writes to the Raft group. It heartbeats followers periodically and keeps their logs replicated. In the absence of heartbeats, followers become candidates after randomized election timeouts and proceed to hold new leader elections.
+
+A third replica type, the "non-voting" replica, does not participate in Raft elections, but is useful for unlocking use cases that require low-latency multi-region reads.
+
+### Raft logs
+
+When writes receive a quorum and are committed by the Raft group leader, they're appended to the Raft log. This provides an ordered set of commands that the replicas agreed on and is essentially the source of truth for consistent replication.
+
+Because this log is treated as serializable, it can be replayed to bring a node from a past state to its current state. This log also lets nodes that temporarily went offline be "caught up" to the current state without needing to receive a copy of the existing data in the form of a snapshot.
+
+### Non-voting replicas
+
+In order to provide better support for multi-region clusters, CockroachDB introduced non-voting replicas. Non-voting replicas follow the Raft log (and are thus able to serve follower reads), but do not participate in quorum. They have almost no impact on write latencies.
+
+Non-voting replicas are also sometimes referred to as read-only replicas, since they only serve reads but do not participate in quorum (and thus do not incur the associated latency costs).
+
+<Note>
+Most users should control non-voting replica placement with the high-level multi-region SQL features instead of configuring them manually.
+</Note>
+
+### Per-replica circuit breakers
+
+When individual ranges become temporarily unavailable, requests to those ranges are refused by a per-replica "circuit breaker" mechanism instead of hanging indefinitely.
+
+From a user's perspective, this means that if a SQL query is going to ultimately fail due to accessing a temporarily unavailable range, a replica in that range will trip its circuit breaker (after 60 seconds by default) and bubble a `ReplicaUnavailableError` error back up through the system to inform the user why their query did not succeed.
+
+Meanwhile, CockroachDB continues asynchronously probing the range's availability. If the replica becomes available again, the breaker is reset so that it can go back to serving requests normally.
+
+This feature is designed to increase the availability of your CockroachDB clusters by making them more robust to transient errors.
+
+<Info>
+The circuit breaker timeout value is controlled by the `kv.replica_circuit_breaker.slow_replication_threshold` cluster setting, which defaults to an interval of 1 minute.
+</Info>
+
+## Snapshots
+
+Each replica can be "snapshotted", which copies all of its data as of a specific timestamp (available because of MVCC). This snapshot can be sent to other nodes during a rebalance event to expedite replication.
+
+After loading the snapshot, the node gets up to date by replaying all actions from the Raft group's log that have occurred since the snapshot was taken.
+
+CockroachDB clusters can send **delegated snapshots**. Delegated snapshots can be sent by a Raft follower on behalf of the leader of a range. Which follower is chosen depends on the locality of the follower being nearest the replica that is the final recipient of the snapshot.
+
+Sending data locally using delegated snapshots has the following benefits:
+
+- Snapshot transfers are faster
+- Snapshot transfers use less WAN bandwidth
+- Network costs are lower for operators of multi-region deployments
+- User traffic is less likely to be negatively impacted by snapshots
+
+Delegated snapshots are managed automatically by the cluster with no need for user involvement.
+
+## Leases
+
+A single node in the Raft group acts as the leaseholder, which is the only node that can serve reads or propose writes to the Raft group leader (both actions are received as `BatchRequests` from `DistSender`).
+
+CockroachDB ensures that the leaseholder is also the Raft group leader via the Leader leases mechanism. This optimizes the speed of writes and makes the cluster more robust against network partitions and node liveness failures.
+
+When the leaseholder is sent a write request, a majority of the replica nodes must be able to communicate with each other to coordinate the write. This ensures that the most recent write is always available to subsequent reads.
+
+If there is no leaseholder, any node receiving a request will attempt to become the leaseholder for the range.
+
+When serving strongly-consistent (non-stale) reads, leaseholders bypass Raft. For the leaseholder's writes to have been committed in the first place, they must have already achieved consensus, so a second consensus on the same data is unnecessary. This has the benefit of not incurring latency from networking round trips required by Raft and greatly increases the speed of reads (without sacrificing consistency).
+
+<Info>
+CockroachDB is considered a CAP-Consistent (CP) system under the CAP theorem. CockroachDB prioritizes data consistency, but also provides high availability due to the coordination between leaseholders and replicas.
+</Info>
+
+### Leader leases
+
+Leader leases establish that the Raft leader also holds the lease. They rely on a shared, store-wide failure detection mechanism for triggering new Raft elections. Stores participate in Raft leader elections by "fortifying" a candidate replica based on that replica's store liveness, as determined among a quorum of all the node's stores. A replica can only become the Raft leader if it is so fortified.
+
+After the fortified Raft leader is chosen, it is then also established as the leaseholder. Support for the lease is provided as long as the Raft leader's store liveness remains supported by a quorum of stores in the Raft group.
+
+<Note>
+Leader leases remove the need for the single point of failure that was the node liveness range in previous versions. They are not vulnerable to the scenario where a leaseholder was partitioned from its followers but still heartbeating the node liveness range.
+</Note>
+
+Based on internal testing, leader leases provide the following user-facing benefits:
+
+- Network partitions between a leaseholder and its followers heal in less than 20 seconds
+- Outages caused by liveness failures last less than 1 second
+- Performance is equivalent to epoch-based leases on large clusters
+
+### How leases are transferred from a dead node
+
+When a cluster needs to access a range on a leaseholder node that is dead, the lease must be transferred to a healthy node. The process is as follows:
+
+<Steps>
+
+<Step title="Detect node failure">
+
+The store liveness mechanism detects node failures through its store-wide heartbeating process. If a node becomes unresponsive, its store liveness support is withdrawn, marking it as unavailable.
+
+</Step>
+
+<Step title="Raft leadership election">
+
+A Raft election is initiated to establish a new leader for the range. This step is necessary because lease acquisition can only occur on the Raft leader. The election process includes a store liveness component to fortify the new leader.
+
+</Step>
+
+<Step title="Lease acquisition">
+
+Once a new Raft leader is elected, the lease acquisition process can proceed. The new leader acquires the lease.
+
+</Step>
+
+</Steps>
+
+The entire process should complete within a few seconds.
+
+<Info>
+This process is lazily initiated and only occurs when a new request is made that requires access to the range associated with the lease on the dead node.
+</Info>
+
+### Leaseholder rebalancing
+
+Because CockroachDB serves reads from a range's leaseholder, it benefits your cluster's performance if the replica closest to the primary geographic source of traffic holds the lease. However, as traffic to your cluster shifts throughout the course of the day, you might want to dynamically shift which nodes hold leases.
+
+Periodically (every 10 minutes by default in large clusters, but more frequently in small clusters), each leaseholder considers whether it should transfer the lease to another replica by considering the following inputs:
+
+- Number of requests from each locality
+- Number of leases on each node
+- Latency between localities
+
+#### Intra-locality
+
+If all the replicas are in the same locality, the decision is made entirely on the basis of the number of leases on each node that contains a replica, trying to achieve a roughly equitable distribution of leases across all of them.
+
+#### Inter-locality
+
+If replicas are in different localities, CockroachDB attempts to calculate which replica would make the best leaseholder (i.e., provide the lowest latency).
+
+To enable dynamic leaseholder rebalancing, a range's current leaseholder tracks how many requests it receives from each locality as an exponentially weighted moving average. When checking for leaseholder rebalancing opportunities, the leaseholder correlates each requesting locality's weight to the locality of each replica by checking how similar the localities are.
+
+The leaseholder then evaluates its own weight and latency versus the other replicas to determine an adjustment factor. The greater the disparity between weights and the larger the latency between localities, the more CockroachDB favors the node from the locality with the larger weight.
+
+## Membership changes: rebalance and repair
+
+Whenever there are changes to a cluster's number of nodes, the members of Raft groups change and, to ensure optimal survivability and performance, replicas need to be rebalanced. What that looks like varies depending on whether the membership change is nodes being added or going offline.
+
+- **Nodes added**: The new node communicates information about itself to other nodes, indicating that it has space available. The cluster then rebalances some replicas onto the new node.
+
+- **Nodes going offline**: If a member of a Raft group ceases to respond, the cluster begins to rebalance by replicating the data the downed node held onto other nodes.
+
+Rebalancing is achieved by using a snapshot of a replica from the leaseholder, and then sending the data to another node over gRPC. After the transfer has been completed, the node with the new replica joins that range's Raft group.
+
+### Load-based replica rebalancing
+
+In addition to the rebalancing that occurs when nodes join or leave a cluster, replicas are also rebalanced automatically across the cluster based on a combination of:
+
+1. Replica count
+2. CPU usage (by default)
+
+<Note>
+Disk utilization per node is not one of the rebalancing criteria.
+</Note>
+
+Load-based replica rebalancing operates in conjunction with load-based splitting of ranges.
+
+## Interactions with other layers
+
+In relationship to other layers in CockroachDB, the replication layer:
+
+- Receives requests from its and other nodes' `DistSender`
+- Writes accepted requests to the storage layer through the Raft log
+- Serves reads from the storage layer
+
+## What's next?
+
+Learn how CockroachDB reads and writes data from disk in the [storage layer](/architecture/storage-layer).

@@ -1,0 +1,347 @@
+---
+title: Self-Hosted Deployment
+description: Manually deploy a secure, multi-node CockroachDB cluster on your own infrastructure with HAProxy load balancing
+---
+
+This guide shows you how to manually deploy a secure multi-node CockroachDB cluster on multiple machines using HAProxy load balancers to distribute client traffic.
+
+<Note>
+  For testing environments where TLS encryption is not required, you can deploy an insecure cluster. However, secure clusters are strongly recommended for production.
+</Note>
+
+## Before you begin
+
+### Requirements
+
+- Multiple machines with sufficient resources:
+  - Minimum 4 vCPUs per node (8+ recommended for production)
+  - Minimum 4 GiB RAM per vCPU
+  - SSD storage with at least 500 IOPS per vCPU
+  - Network connectivity between all nodes
+
+- Operating system:
+  - Linux distribution with glibc (Ubuntu, RHEL, CentOS)
+  - Linux kernel from the last 5 years
+  - Transparent Huge Pages (THP) set to `madvise`
+
+- Software:
+  - CockroachDB binary installed on each node
+  - HAProxy for load balancing
+  - NTP or other clock synchronization service
+
+### Recommendations
+
+- Deploy at least 3 nodes for fault tolerance
+- Use nodes with identical hardware specifications
+- Configure at least 3 nodes per region for multi-region deployments
+- Increase replication factor to 5 for local disk storage
+- Provision 10-15% extra capacity for growth and maintenance
+
+## Deployment steps
+
+<Steps>
+  <Step title="Synchronize clocks">
+    Ensure all nodes have synchronized clocks. CockroachDB requires clock synchronization to maintain data consistency.
+
+    Install and configure NTP:
+
+    ```bash
+    sudo apt-get install ntp
+    sudo systemctl enable ntp
+    sudo systemctl start ntp
+    ```
+
+    Verify synchronization:
+
+    ```bash
+    ntpq -p
+    ```
+
+    <Warning>
+      Clock skew can cause transaction anomalies and cluster instability. Monitor clock offsets regularly.
+    </Warning>
+  </Step>
+
+  <Step title="Generate certificates">
+    Create a certificate authority (CA) and generate certificates for nodes and clients.
+
+    Create directories for certificates:
+
+    ```bash
+    mkdir certs my-safe-directory
+    ```
+
+    Generate CA certificate:
+
+    ```bash
+    cockroach cert create-ca \
+      --certs-dir=certs \
+      --ca-key=my-safe-directory/ca.key
+    ```
+
+    Create node certificate (repeat for each node):
+
+    ```bash
+    cockroach cert create-node \
+      <node-hostname> \
+      <node-ip-address> \
+      localhost \
+      127.0.0.1 \
+      --certs-dir=certs \
+      --ca-key=my-safe-directory/ca.key
+    ```
+
+    Create client certificate for root user:
+
+    ```bash
+    cockroach cert create-client root \
+      --certs-dir=certs \
+      --ca-key=my-safe-directory/ca.key
+    ```
+
+    <Info>
+      Store the CA key (`ca.key`) in a secure location. You'll need it to generate additional certificates.
+    </Info>
+  </Step>
+
+  <Step title="Start nodes">
+    Start CockroachDB on each node:
+
+    ```bash
+    cockroach start \
+      --certs-dir=certs \
+      --advertise-addr=<node-address> \
+      --join=<node1-address>,<node2-address>,<node3-address> \
+      --cache=.25 \
+      --max-sql-memory=.25 \
+      --background
+    ```
+
+    Replace:
+    - `<node-address>` - This node's IP address or hostname
+    - `<nodeX-address>` - Addresses of all nodes in the cluster
+
+    <CodeGroup>
+      ```bash Node 1
+      cockroach start \
+        --certs-dir=certs \
+        --advertise-addr=10.0.0.1 \
+        --join=10.0.0.1,10.0.0.2,10.0.0.3 \
+        --cache=.25 \
+        --max-sql-memory=.25 \
+        --background
+      ```
+
+      ```bash Node 2
+      cockroach start \
+        --certs-dir=certs \
+        --advertise-addr=10.0.0.2 \
+        --join=10.0.0.1,10.0.0.2,10.0.0.3 \
+        --cache=.25 \
+        --max-sql-memory=.25 \
+        --background
+      ```
+
+      ```bash Node 3
+      cockroach start \
+        --certs-dir=certs \
+        --advertise-addr=10.0.0.3 \
+        --join=10.0.0.1,10.0.0.2,10.0.0.3 \
+        --cache=.25 \
+        --max-sql-memory=.25 \
+        --background
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Initialize the cluster">
+    From any node, initialize the cluster:
+
+    ```bash
+    cockroach init --certs-dir=certs --host=<address-of-any-node>
+    ```
+
+    This performs a one-time initialization that enables the nodes to start accepting client connections.
+  </Step>
+
+  <Step title="Test the cluster">
+    Verify the cluster is operational:
+
+    ```bash
+    cockroach node status --certs-dir=certs --host=<address-of-any-node>
+    ```
+
+    Connect to the SQL shell:
+
+    ```bash
+    cockroach sql --certs-dir=certs --host=<address-of-any-node>
+    ```
+
+    Run a test query:
+
+    ```sql
+    CREATE DATABASE test;
+    CREATE TABLE test.accounts (id INT PRIMARY KEY, balance DECIMAL);
+    INSERT INTO test.accounts VALUES (1, 1000.50);
+    SELECT * FROM test.accounts;
+    ```
+  </Step>
+
+  <Step title="Set up load balancing">
+    Configure HAProxy to distribute client connections across nodes.
+
+    Generate HAProxy configuration:
+
+    ```bash
+    cockroach gen haproxy \
+      --certs-dir=certs \
+      --host=<address-of-any-node>
+    ```
+
+    This creates an `haproxy.cfg` file. Copy it to your HAProxy server:
+
+    ```bash
+    scp haproxy.cfg <user>@<haproxy-host>:~/
+    ```
+
+    Install and start HAProxy:
+
+    ```bash
+    apt-get install haproxy
+    haproxy -f haproxy.cfg
+    ```
+
+    <Info>
+      For high availability, deploy multiple HAProxy instances with floating IPs or DNS-based load balancing.
+    </Info>
+  </Step>
+</Steps>
+
+## Load balancing configuration
+
+Each CockroachDB node is an equally suitable SQL gateway. Load balancing provides:
+
+- **Performance** - Distributes client traffic to prevent node overload
+- **Reliability** - Routes traffic away from failed nodes
+
+<Warning>
+  With a single load balancer, the load balancer itself becomes a single point of failure. Use multiple load balancing instances with floating IPs or DNS for production.
+</Warning>
+
+### HAProxy health checks
+
+HAProxy should use CockroachDB's readiness endpoint:
+
+```haproxy
+listen psql
+  bind :26257
+  mode tcp
+  balance roundrobin
+  option httpchk GET /health?ready=1
+  server node1 10.0.0.1:26257 check port 8080
+  server node2 10.0.0.2:26257 check port 8080
+  server node3 10.0.0.3:26257 check port 8080
+```
+
+## Production recommendations
+
+### Hardware specifications
+
+<CardGroup cols={2}>
+  <Card title="CPU" icon="microchip">
+    - Minimum: 4 vCPUs per node
+    - Recommended: 8-16 vCPUs
+    - Avoid burstable instances
+  </Card>
+
+  <Card title="Memory" icon="memory">
+    - Minimum: 4 GiB per vCPU
+    - Recommended: 4 GiB per vCPU
+    - Disable swap
+  </Card>
+
+  <Card title="Storage" icon="hard-drive">
+    - SSD with 500 IOPS per vCPU
+    - 30 MB/s per vCPU throughput
+    - ext4 or XFS filesystem
+  </Card>
+
+  <Card title="Network" icon="network-wired">
+    - Low latency between nodes
+    - Private network preferred
+    - Open ports: 26257, 8080
+  </Card>
+</CardGroup>
+
+### Cluster topology
+
+- **Single-region**: At least 3 nodes in different availability zones
+- **Multi-region**: At least 3 nodes per region
+- **Node distribution**: Spread nodes across failure domains
+
+### Security
+
+<Steps>
+  <Step title="Use TLS certificates">
+    Always use TLS certificates for production deployments. Never run insecure clusters in production.
+  </Step>
+
+  <Step title="Protect the CA key">
+    Store the CA key in a secure location. It's needed to generate additional certificates but should not be on cluster nodes.
+  </Step>
+
+  <Step title="Rotate certificates">
+    Monitor certificate expiration and rotate certificates before they expire.
+  </Step>
+
+  <Step title="Configure firewalls">
+    Restrict network access to only necessary ports and trusted IP ranges.
+  </Step>
+</Steps>
+
+### Monitoring and maintenance
+
+- Set up the DB Console on port 8080
+- Configure Prometheus metrics collection
+- Monitor disk usage, IOPS, and CPU
+- Set up automated backups to cloud storage
+- Configure alerting for node failures and resource exhaustion
+
+## Scaling the cluster
+
+Add nodes to increase capacity:
+
+<Steps>
+  <Step title="Prepare the new node">
+    Install CockroachDB and copy certificates to the new node.
+  </Step>
+
+  <Step title="Start the new node">
+    ```bash
+    cockroach start \
+      --certs-dir=certs \
+      --advertise-addr=<new-node-address> \
+      --join=<existing-node-addresses> \
+      --cache=.25 \
+      --max-sql-memory=.25 \
+      --background
+    ```
+  </Step>
+
+  <Step title="Verify the node joined">
+    ```bash
+    cockroach node status --certs-dir=certs --host=<any-node-address>
+    ```
+  </Step>
+
+  <Step title="Update load balancer">
+    Add the new node to your HAProxy configuration and reload HAProxy.
+  </Step>
+</Steps>
+
+## Next steps
+
+- Configure [backup and restore](/operations/backup-restore) strategies
+- Set up [monitoring and alerting](/operations/monitoring)
+- Review the [production checklist](/deployment/production-checklist)
+- Learn about [connection pooling](/essentials/connection-pooling)

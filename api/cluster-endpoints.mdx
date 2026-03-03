@@ -1,0 +1,516 @@
+---
+title: Cluster Status Endpoints
+description: Monitor nodes, ranges, sessions, and events in your CockroachDB cluster
+---
+
+The Cluster Status endpoints provide detailed information about the nodes, ranges, sessions, and events in your CockroachDB cluster. These endpoints help you monitor cluster health, troubleshoot performance issues, and understand cluster topology.
+
+## Authentication
+
+All endpoints on this page require authentication using a session token. See the [Cluster API Overview](/api/cluster-api-overview) for authentication instructions.
+
+```bash
+X-Cockroach-API-Session: {session_token}
+```
+
+## List Nodes
+
+Get details on all nodes in the cluster, including node IDs, software versions, and hardware specifications.
+
+```bash GET /api/v2/nodes
+curl --request GET \
+  --url https://localhost:8080/api/v2/nodes \
+  --header 'X-Cockroach-API-Session: {session_token}'
+```
+
+**Stability:** Stable
+
+### Response
+
+```json Response Example
+{
+  "nodes": [
+    {
+      "node_id": 1,
+      "address": {
+        "network": "tcp",
+        "address": "cockroach-1:26257"
+      },
+      "build_tag": "v25.3.0",
+      "started_at": "2024-01-15T10:00:00Z",
+      "locality": {
+        "region": "us-east-1",
+        "zone": "us-east-1a"
+      },
+      "liveness_status": "LIVE",
+      "hardware": {
+        "cpu_count": 4,
+        "memory_bytes": 17179869184
+      }
+    },
+    {
+      "node_id": 2,
+      "address": {
+        "network": "tcp",
+        "address": "cockroach-2:26257"
+      },
+      "build_tag": "v25.3.0",
+      "started_at": "2024-01-15T10:01:00Z",
+      "locality": {
+        "region": "us-east-1",
+        "zone": "us-east-1b"
+      },
+      "liveness_status": "LIVE"
+    }
+  ]
+}
+```
+
+<ResponseField name="nodes" type="array">
+  Array of node objects
+  
+  <Expandable title="Node Object">
+    <ResponseField name="node_id" type="integer">
+      Unique identifier for the node
+    </ResponseField>
+    
+    <ResponseField name="address" type="object">
+      Network address of the node
+    </ResponseField>
+    
+    <ResponseField name="build_tag" type="string">
+      CockroachDB version running on the node
+    </ResponseField>
+    
+    <ResponseField name="started_at" type="timestamp">
+      When the node was started
+    </ResponseField>
+    
+    <ResponseField name="locality" type="object">
+      Locality configuration (region, zone, etc.)
+    </ResponseField>
+    
+    <ResponseField name="liveness_status" type="enum">
+      Node liveness status: `LIVE`, `UNAVAILABLE`, `DECOMMISSIONED`, `DRAINING`
+    </ResponseField>
+    
+    <ResponseField name="hardware" type="object">
+      Hardware specifications (CPU, memory)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## List Node Ranges
+
+Get details on the ranges stored on a specific node.
+
+```bash GET /api/v2/nodes/{node_id}/ranges
+curl --request GET \
+  --url https://localhost:8080/api/v2/nodes/{node_id}/ranges \
+  --header 'X-Cockroach-API-Session: {session_token}'
+```
+
+**Stability:** Unstable
+
+### Path Parameters
+
+<ParamField path="node_id" type="integer" required>
+  Unique identifier for the node
+</ParamField>
+
+### Response
+
+```json Response Example
+{
+  "ranges": [
+    {
+      "range_id": 42,
+      "start_key": "/Table/52",
+      "end_key": "/Table/52/1",
+      "replicas": [
+        {
+          "node_id": 1,
+          "store_id": 1,
+          "replica_id": 1
+        },
+        {
+          "node_id": 2,
+          "store_id": 2,
+          "replica_id": 2
+        }
+      ],
+      "lease_holder": 1,
+      "range_size_bytes": 134217728
+    }
+  ]
+}
+```
+
+<ResponseField name="ranges" type="array">
+  Array of range objects on this node
+  
+  <Expandable title="Range Object">
+    <ResponseField name="range_id" type="integer">
+      Unique identifier for the range
+    </ResponseField>
+    
+    <ResponseField name="start_key" type="string">
+      Start key of the range
+    </ResponseField>
+    
+    <ResponseField name="end_key" type="string">
+      End key of the range
+    </ResponseField>
+    
+    <ResponseField name="replicas" type="array">
+      Array of replica locations
+    </ResponseField>
+    
+    <ResponseField name="lease_holder" type="integer">
+      Node ID of the leaseholder
+    </ResponseField>
+    
+    <ResponseField name="range_size_bytes" type="integer">
+      Size of the range in bytes
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## List Hot Ranges
+
+Get information on ranges receiving a high number of reads or writes.
+
+```bash GET /api/v2/ranges/hot
+curl --request GET \
+  --url https://localhost:8080/api/v2/ranges/hot \
+  --header 'X-Cockroach-API-Session: {session_token}'
+```
+
+**Stability:** Stable
+
+### Response
+
+```json Response Example
+{
+  "hot_ranges": [
+    {
+      "range_id": 156,
+      "node_id": 1,
+      "qps": 1250.5,
+      "writes_per_second": 500.2,
+      "reads_per_second": 750.3,
+      "database": "production",
+      "table": "orders",
+      "index": "primary"
+    },
+    {
+      "range_id": 89,
+      "node_id": 3,
+      "qps": 890.1,
+      "writes_per_second": 290.4,
+      "reads_per_second": 599.7,
+      "database": "production",
+      "table": "users",
+      "index": "users_email_idx"
+    }
+  ]
+}
+```
+
+<ResponseField name="hot_ranges" type="array">
+  Array of hot range objects
+  
+  <Expandable title="Hot Range Object">
+    <ResponseField name="range_id" type="integer">
+      Unique identifier for the range
+    </ResponseField>
+    
+    <ResponseField name="node_id" type="integer">
+      Node ID where the leaseholder resides
+    </ResponseField>
+    
+    <ResponseField name="qps" type="number">
+      Queries per second on this range
+    </ResponseField>
+    
+    <ResponseField name="writes_per_second" type="number">
+      Write operations per second
+    </ResponseField>
+    
+    <ResponseField name="reads_per_second" type="number">
+      Read operations per second
+    </ResponseField>
+    
+    <ResponseField name="database" type="string">
+      Database containing this range
+    </ResponseField>
+    
+    <ResponseField name="table" type="string">
+      Table containing this range
+    </ResponseField>
+    
+    <ResponseField name="index" type="string">
+      Index name for this range
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Get Range Details
+
+Get detailed technical information on a specific range.
+
+```bash GET /api/v2/ranges/{range_id}
+curl --request GET \
+  --url https://localhost:8080/api/v2/ranges/{range_id} \
+  --header 'X-Cockroach-API-Session: {session_token}'
+```
+
+**Stability:** Unstable
+
+<Note>
+This endpoint is typically used by Cockroach Labs engineers for deep troubleshooting.
+</Note>
+
+### Path Parameters
+
+<ParamField path="range_id" type="integer" required>
+  Unique identifier for the range
+</ParamField>
+
+## List Sessions
+
+Get SQL session details for all current users or a specified user.
+
+```bash GET /api/v2/sessions
+curl --request GET \
+  --url https://localhost:8080/api/v2/sessions \
+  --header 'X-Cockroach-API-Session: {session_token}'
+```
+
+**Stability:** Unstable
+
+### Query Parameters
+
+<ParamField query="username" type="string">
+  Filter sessions by username
+</ParamField>
+
+### Response
+
+```json Response Example
+{
+  "sessions": [
+    {
+      "node_id": 1,
+      "session_id": "16b4e1d5f2a3c8d0",
+      "username": "app_user",
+      "client_address": "192.168.1.100:54321",
+      "application_name": "payment_service",
+      "active_queries": [
+        {
+          "sql": "SELECT * FROM orders WHERE status = $1",
+          "start": "2024-01-15T14:30:00Z",
+          "phase": "executing"
+        }
+      ],
+      "session_start": "2024-01-15T14:00:00Z",
+      "oldest_query_start": "2024-01-15T14:30:00Z"
+    }
+  ]
+}
+```
+
+<ResponseField name="sessions" type="array">
+  Array of active session objects
+  
+  <Expandable title="Session Object">
+    <ResponseField name="node_id" type="integer">
+      Node ID handling this session
+    </ResponseField>
+    
+    <ResponseField name="session_id" type="string">
+      Unique session identifier
+    </ResponseField>
+    
+    <ResponseField name="username" type="string">
+      SQL username for this session
+    </ResponseField>
+    
+    <ResponseField name="client_address" type="string">
+      Client IP address and port
+    </ResponseField>
+    
+    <ResponseField name="application_name" type="string">
+      Application name set by the client
+    </ResponseField>
+    
+    <ResponseField name="active_queries" type="array">
+      Currently executing queries
+    </ResponseField>
+    
+    <ResponseField name="session_start" type="timestamp">
+      When the session was established
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## List Events
+
+List the latest cluster events in descending order.
+
+```bash GET /api/v2/events
+curl --request GET \
+  --url https://localhost:8080/api/v2/events \
+  --header 'X-Cockroach-API-Session: {session_token}'
+```
+
+**Stability:** Unstable
+
+### Query Parameters
+
+<ParamField query="limit" type="integer" default="100">
+  Maximum number of events to return
+</ParamField>
+
+<ParamField query="type" type="string">
+  Filter by event type (e.g., `node_join`, `node_restart`)
+</ParamField>
+
+### Response
+
+```json Response Example
+{
+  "events": [
+    {
+      "timestamp": "2024-01-15T14:35:00Z",
+      "event_type": "node_restart",
+      "node_id": 2,
+      "info": {
+        "reason": "planned maintenance"
+      }
+    },
+    {
+      "timestamp": "2024-01-15T10:00:00Z",
+      "event_type": "create_database",
+      "user": "admin",
+      "info": {
+        "database_name": "production"
+      }
+    },
+    {
+      "timestamp": "2024-01-14T16:20:00Z",
+      "event_type": "drop_table",
+      "user": "admin",
+      "info": {
+        "database_name": "test",
+        "table_name": "old_data"
+      }
+    }
+  ]
+}
+```
+
+<ResponseField name="events" type="array">
+  Array of event objects in descending chronological order
+  
+  <Expandable title="Event Object">
+    <ResponseField name="timestamp" type="timestamp">
+      When the event occurred
+    </ResponseField>
+    
+    <ResponseField name="event_type" type="string">
+      Type of event (e.g., `node_join`, `create_database`, `drop_table`)
+    </ResponseField>
+    
+    <ResponseField name="node_id" type="integer">
+      Node ID associated with the event (if applicable)
+    </ResponseField>
+    
+    <ResponseField name="user" type="string">
+      SQL user who triggered the event (if applicable)
+    </ResponseField>
+    
+    <ResponseField name="info" type="object">
+      Additional event-specific information
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## List Users
+
+List all SQL users on the cluster.
+
+```bash GET /api/v2/users
+curl --request GET \
+  --url https://localhost:8080/api/v2/users \
+  --header 'X-Cockroach-API-Session: {session_token}'
+```
+
+**Stability:** Stable
+
+### Response
+
+```json Response Example
+{
+  "users": [
+    {
+      "username": "admin"
+    },
+    {
+      "username": "app_user"
+    },
+    {
+      "username": "readonly"
+    }
+  ]
+}
+```
+
+## Common Use Cases
+
+<AccordionGroup>
+  <Accordion title="Monitor Cluster Topology">
+    Use `/nodes` to track which nodes are online and their versions:
+    
+    ```bash
+    curl -X GET https://localhost:8080/api/v2/nodes \
+      -H 'X-Cockroach-API-Session: {token}' \
+      | jq '.nodes[] | {node_id, build_tag, liveness_status}'
+    ```
+  </Accordion>
+  
+  <Accordion title="Identify Performance Bottlenecks">
+    Use `/ranges/hot` to find ranges with high QPS:
+    
+    ```bash
+    curl -X GET https://localhost:8080/api/v2/ranges/hot \
+      -H 'X-Cockroach-API-Session: {token}' \
+      | jq '.hot_ranges | sort_by(.qps) | reverse | .[0:5]'
+    ```
+  </Accordion>
+  
+  <Accordion title="Track Active Connections">
+    Use `/sessions` to monitor current SQL sessions:
+    
+    ```bash
+    curl -X GET https://localhost:8080/api/v2/sessions \
+      -H 'X-Cockroach-API-Session: {token}' \
+      | jq '.sessions | length'
+    ```
+  </Accordion>
+  
+  <Accordion title="Audit Cluster Changes">
+    Use `/events` to track administrative actions:
+    
+    ```bash
+    curl -X GET 'https://localhost:8080/api/v2/events?type=create_database' \
+      -H 'X-Cockroach-API-Session: {token}'
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## API Reference
+
+For complete endpoint specifications, request/response schemas, and examples, refer to:
+
+[Cluster API v2 Reference](https://cockroachlabs.com/docs/api/cluster/v2.html)

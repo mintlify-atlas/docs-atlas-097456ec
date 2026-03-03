@@ -1,0 +1,256 @@
+---
+title: ALTER TABLE
+description: Change the schema of a table with the ALTER TABLE statement.
+---
+
+The `ALTER TABLE` statement changes the definition of a table.
+
+## Required privileges
+
+Refer to the respective subcommands for required privileges.
+
+## Syntax
+
+```sql
+ALTER TABLE [IF EXISTS] table_name alter_table_cmd [, ...]
+```
+
+## Parameters
+
+<ParamField path="IF EXISTS" type="keyword">
+  Change the table only if a table with the current name exists. If one does not exist, do not return an error.
+</ParamField>
+
+<ParamField path="table_name" type="identifier">
+  The name of the table you want to change.
+</ParamField>
+
+## Subcommands
+
+Some subcommands can be used in combination in a single `ALTER TABLE` statement.
+
+### ADD COLUMN
+
+Add columns to existing tables.
+
+**Required privileges:** The `CREATE` privilege on the table.
+
+```sql
+ALTER TABLE bank ADD COLUMN active BOOL;
+```
+
+#### Add a column with NOT NULL constraint and DEFAULT value
+
+```sql
+ALTER TABLE bank ADD COLUMN interest DECIMAL NOT NULL DEFAULT (DECIMAL '1.3');
+```
+
+#### Add a column with UNIQUE constraint
+
+```sql
+ALTER TABLE bank ADD COLUMN address STRING UNIQUE;
+```
+
+#### Add a column with FOREIGN KEY constraint
+
+```sql
+CREATE TABLE customers (
+  id INT PRIMARY KEY,
+  name STRING
+);
+
+ALTER TABLE bank ADD COLUMN cust_number INT REFERENCES customers(id);
+```
+
+### ADD CONSTRAINT
+
+Add the following constraints to columns:
+- `UNIQUE`
+- `CHECK`
+- `FOREIGN KEY`
+
+**Required privileges:** The `CREATE` privilege on the table.
+
+To add a primary key constraint, you should explicitly define the primary key at table creation. To replace an existing primary key, you can use `ADD CONSTRAINT ... PRIMARY KEY`.
+
+```sql
+ALTER TABLE users ADD CONSTRAINT unique_name UNIQUE (name);
+```
+
+### ALTER COLUMN
+
+Use `ALTER TABLE ... ALTER COLUMN` to:
+- Set, change, or drop a column's `DEFAULT` constraint
+- Set or drop a column's `NOT NULL` constraint
+- Set, change, or drop an `ON UPDATE` expression
+- Change a column's data type
+- Set the visibility of a column
+
+**Required privileges:** The `CREATE` privilege on the table.
+
+```sql
+ALTER TABLE users ALTER COLUMN name SET NOT NULL;
+```
+
+### ALTER PRIMARY KEY
+
+Change the primary key of a table.
+
+**Required privileges:** The `CREATE` privilege on the table.
+
+Note: When you change a primary key with `ALTER PRIMARY KEY`, the old primary key index becomes a `UNIQUE` secondary index.
+
+```sql
+ALTER TABLE users ALTER PRIMARY KEY USING COLUMNS (id, city);
+```
+
+### DROP COLUMN
+
+Remove columns from a table.
+
+**Required privileges:** The `CREATE` privilege on the table.
+
+```sql
+ALTER TABLE bank DROP COLUMN active;
+```
+
+### DROP CONSTRAINT
+
+Remove `CHECK` and `FOREIGN KEY` constraints from columns.
+
+**Required privileges:** The `CREATE` privilege on the table.
+
+```sql
+ALTER TABLE users DROP CONSTRAINT check_name;
+```
+
+### RENAME COLUMN
+
+Change the name of a column in a table.
+
+**Required privileges:** The `CREATE` privilege on the table.
+
+```sql
+ALTER TABLE users RENAME COLUMN name TO full_name;
+```
+
+### RENAME TO
+
+Change the name of a table.
+
+**Required privileges:** The `DROP` privilege on the table and the `CREATE` privilege on the parent database.
+
+Note: `ALTER TABLE ... RENAME TO` cannot be used to move a table from one schema or database to another.
+
+```sql
+ALTER TABLE users RENAME TO customers;
+```
+
+### VALIDATE CONSTRAINT
+
+Check whether values in a column match a constraint on the column.
+
+**Required privileges:** The `CREATE` privilege on the table.
+
+This statement is especially useful after applying a constraint to an existing column via `ADD CONSTRAINT`.
+
+```sql
+ALTER TABLE users VALIDATE CONSTRAINT check_name;
+```
+
+## Examples
+
+### Add columns
+
+#### Add a single column
+
+```sql
+ALTER TABLE bank ADD COLUMN active BOOL;
+```
+
+```sql
+SHOW COLUMNS FROM bank;
+```
+
+```
+  column_name | data_type | is_nullable | column_default
+--------------+-----------+-------------+----------------
+  id          | INT8      |    false    | NULL
+  balance     | INT8      |    true     | NULL
+  payload     | STRING    |    true     | NULL
+  active      | BOOL      |    true     | NULL
+```
+
+#### Add multiple columns
+
+```sql
+ALTER TABLE bank ADD COLUMN location STRING, ADD COLUMN currency STRING;
+```
+
+### Add constraints
+
+#### Add the CHECK constraint
+
+```sql
+ALTER TABLE users ADD CONSTRAINT check_name CHECK (LENGTH(name) > 0);
+```
+
+#### Add the FOREIGN KEY constraint with CASCADE
+
+```sql
+ALTER TABLE vehicles 
+  ADD CONSTRAINT fk_city_ref_users 
+  FOREIGN KEY (city, owner_id) REFERENCES users(city, id) 
+  ON DELETE CASCADE;
+```
+
+### Alter columns
+
+#### Set the DEFAULT value constraint
+
+```sql
+ALTER TABLE users ALTER COLUMN country SET DEFAULT 'USA';
+```
+
+#### Set the NOT NULL constraint
+
+```sql
+ALTER TABLE users ALTER COLUMN name SET NOT NULL;
+```
+
+#### Change a column's data type
+
+```sql
+ALTER TABLE users ALTER COLUMN zip_code TYPE STRING;
+```
+
+### Drop columns
+
+```sql
+ALTER TABLE bank DROP COLUMN active;
+```
+
+### Drop constraints
+
+```sql
+ALTER TABLE users DROP CONSTRAINT check_name;
+```
+
+### Rename columns
+
+```sql
+ALTER TABLE users RENAME COLUMN name TO full_name;
+```
+
+### Rename tables
+
+```sql
+ALTER TABLE users RENAME TO customers;
+```
+
+## See also
+
+- CREATE TABLE
+- DROP TABLE
+- SHOW TABLES
+- SHOW COLUMNS

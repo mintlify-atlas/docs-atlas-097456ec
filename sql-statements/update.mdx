@@ -1,0 +1,194 @@
+---
+title: UPDATE
+description: Update one or more rows in a table with the UPDATE statement.
+---
+
+The `UPDATE` statement updates rows in a table.
+
+<Warning>
+If you update a row that contains a column referenced by a foreign key constraint and has an `ON UPDATE` action, all of the dependent rows will also be updated.
+</Warning>
+
+## Required privileges
+
+You must have the `SELECT` and `UPDATE` privileges on the table.
+
+## Syntax
+
+```sql
+[WITH common_table_expr [, ...]]
+UPDATE table_name [[AS] table_alias_name]
+  SET {column_name = value | (column_name [, ...]) = (value [, ...])} [, ...]
+  [FROM table_ref [, ...]]
+  [WHERE condition]
+  [ORDER BY ...]
+  [LIMIT row_count]
+  [RETURNING ...];
+```
+
+## Parameters
+
+<ParamField path="common_table_expr" type="expression">
+  See Common Table Expressions.
+</ParamField>
+
+<ParamField path="table_name" type="identifier">
+  The name of the table that contains the rows you want to update.
+</ParamField>
+
+<ParamField path="AS table_alias_name" type="alias">
+  An alias for the table name. When an alias is provided, it completely hides the actual table name.
+</ParamField>
+
+<ParamField path="column_name" type="identifier">
+  The name of the column whose values you want to update.
+</ParamField>
+
+<ParamField path="value" type="expression">
+  The new value you want to use, the aggregate function you want to perform, or the scalar expression you want to use.
+  
+  To fill columns with their default values, use `DEFAULT VALUES` in place of the value expression. To fill a specific column with its default value, use `DEFAULT` at the appropriate position.
+</ParamField>
+
+<ParamField path="FROM table_ref" type="reference">
+  Specify a table to reference, but not update, in `UPDATE` expressions, or in `RETURNING` and `WHERE` clauses.
+</ParamField>
+
+<ParamField path="WHERE condition" type="condition">
+  A scalar expression that returns Boolean values using columns. Update rows that return `TRUE`.
+  
+  **Without a `WHERE` clause, `UPDATE` updates all rows in the table.**
+</ParamField>
+
+<ParamField path="sort_clause" type="clause">
+  An `ORDER BY` clause for ordering query results.
+</ParamField>
+
+<ParamField path="limit_clause" type="clause">
+  A `LIMIT` clause to limit the number of rows updated.
+</ParamField>
+
+<ParamField path="RETURNING target_list" type="clause">
+  Return values based on rows updated, where `target_list` can be specific column names from the table, `*` for all columns, or computations using scalar expressions.
+  
+  To return nothing in the response, not even the number of rows updated, use `RETURNING NOTHING`.
+</ParamField>
+
+## Force index selection
+
+By using the explicit index annotation (also known as "index hinting"), you can override CockroachDB's index selection and use a specific index for updating rows.
+
+```sql
+UPDATE table@my_idx SET ...;
+```
+
+## Reference other tables
+
+To reference values from a table other than the table being updated, add a `FROM` clause that specifies one or more tables in the cluster.
+
+## Bulk-update data
+
+To update a large number of rows (tens of thousands of rows or more), we recommend iteratively updating subsets of the rows until all rows have been updated.
+
+## Examples
+
+### Update a single column in a single row
+
+```sql
+SELECT * FROM users LIMIT 10;
+```
+
+```
+                   id                  |   city    |        name        
+---------------------------------------+-----------+--------------------
+  c28f5c28-f5c2-4000-8000-000000000026 | amsterdam | Maria Weber        
+  851eb851-eb85-4000-8000-00000000001a | chicago   | Samantha Coffey    
+```
+
+```sql
+UPDATE users SET address = '201 E Randolph St' 
+  WHERE id = '851eb851-eb85-4000-8000-00000000001a';
+```
+
+### Update multiple columns in a single row
+
+```sql
+UPDATE rides SET (end_address, revenue) = ('201 E Randolph St', 25.00) 
+  WHERE id = '851eb851-eb85-4000-8000-000000000104';
+```
+
+### Update using SELECT statement
+
+```sql
+UPDATE rides SET (revenue, start_address) =
+  (SELECT revenue, end_address FROM rides 
+   WHERE id = '94fdf3b6-45a1-4800-8000-000000000123')
+  WHERE id = '851eb851-eb85-4000-8000-000000000104';
+```
+
+### Update with default values
+
+```sql
+UPDATE users SET address = DEFAULT 
+  WHERE id = '19999999-9999-4a00-8000-000000000005';
+```
+
+### Update using values from a different table
+
+```sql
+UPDATE rides SET revenue = NULL 
+  FROM vehicles 
+  WHERE rides.rider_id=vehicles.owner_id AND rides.vehicle_id=vehicles.id;
+```
+
+### Update all rows
+
+<Warning>
+If you do not use the `WHERE` clause to specify the rows to be updated, the values for all rows will be updated.
+</Warning>
+
+<Info>
+If the `sql_safe_updates` session variable is set to `true`, the client will prevent the update. `sql_safe_updates` is set to `true` by default.
+</Info>
+
+```sql
+UPDATE rides SET revenue = 7.00;
+```
+
+```
+pq: rejected: UPDATE without WHERE clause (sql_safe_updates = true)
+```
+
+You can use a `SET` statement to set session variables:
+
+```sql
+SET sql_safe_updates = false;
+```
+
+```sql
+UPDATE rides SET revenue = 7.00;
+```
+
+### Update and return values
+
+In this example, the `RETURNING` clause returns the `id` value of the row updated:
+
+```sql
+UPDATE users SET address = '201 E Randolph St' 
+  WHERE id = '851eb851-eb85-4000-8000-00000000001a'
+  RETURNING id, name, address;
+```
+
+### Update with index hints
+
+```sql
+UPDATE users@users_name_idx SET address = '201 E Randolph St' 
+  WHERE name = 'Jon Snow';
+```
+
+## See also
+
+- INSERT
+- UPSERT
+- DELETE
+- SELECT

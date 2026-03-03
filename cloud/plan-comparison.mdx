@@ -1,0 +1,379 @@
+---
+title: CockroachDB Cloud Plan Comparison
+description: Compare CockroachDB Basic, Standard, and Advanced plans to choose the right option for your needs.
+---
+
+This page provides a detailed comparison of CockroachDB Cloud plans to help you choose the right option for your workload.
+
+## Plans Overview
+
+CockroachDB Cloud offers three plans with different pricing models and features:
+
+<CardGroup cols={3}>
+  <Card title="Basic" icon="rocket">
+    **Usage-Based**
+    
+    Ideal for development, testing, and small applications with variable workloads.
+  </Card>
+  
+  <Card title="Standard" icon="gauge-high">
+    **Provisioned Compute**
+    
+    Best for production workloads with predictable resource needs. Currently in Preview.
+  </Card>
+  
+  <Card title="Advanced" icon="shield">
+    **Fully Provisioned**
+    
+    Enterprise-grade with compliance features and dedicated resources.
+  </Card>
+</CardGroup>
+
+## Quick Comparison
+
+| Feature | Basic | Standard | Advanced |
+|---------|-------|----------|----------|
+| **Pricing Model** | Fully usage-based | Provisioned compute + usage-based storage | Fully provisioned + usage-based services |
+| **Best For** | Dev/test, small apps | Production apps | Mission-critical, compliance |
+| **Free Tier** | $15/month | No | No |
+| **Trial Credits** | No | $400 for 30 days | $400 for 30 days |
+| **Min Monthly Cost** | ~$0 (with free tier) | ~$300 | ~$500 |
+| **Cloud Providers** | AWS, GCP, Azure | AWS, GCP | AWS, GCP, Azure |
+| **Max Regions** | 6 | Multiple | Multiple |
+| **Scaling** | Automatic | Manual capacity adjust | Manual nodes/storage |
+| **Private Connectivity** | No | AWS PrivateLink, GCP PSC | All options |
+| **DB Console** | No | No | Yes |
+| **PCI DSS** | No | No | Yes (with security add-on) |
+| **CMEK** | No | No | Yes (with security add-on) |
+| **SLA** | None | 99.99% | 99.99% (multi-region) |
+
+## Detailed Feature Comparison
+
+### Infrastructure
+
+<Tabs>
+  <Tab title="Deployment">
+    | Feature | Basic | Standard | Advanced |
+    |---------|-------|----------|----------|
+    | **Architecture** | Shared infrastructure | Isolated compute | Dedicated infrastructure |
+    | **Node Visibility** | No | No | Yes |
+    | **Custom VPC** | No | No | Yes |
+    | **IP Range Config** | No | No | Yes |
+    | **Minimum Nodes** | N/A | N/A | 1 (3 for multi-region) |
+  </Tab>
+  
+  <Tab title="Compute">
+    | Feature | Basic | Standard | Advanced |
+    |---------|-------|----------|----------|
+    | **Sizing** | Auto-scaled (RUs) | Provisioned vCPUs (4-128+) | Per-node vCPU selection |
+    | **CPU Options** | Automatic | 4, 8, 16, 32, 64, 128 vCPUs | 2, 4, 8, 16, 32+ vCPU per node |
+    | **RAM** | Automatic | Automatic per vCPU | Automatic per vCPU |
+    | **Change Capacity** | Automatic | Manual (3x per 7 days for decrease) | Add/remove nodes |
+  </Tab>
+  
+  <Tab title="Storage">
+    | Feature | Basic | Standard | Advanced |
+    |---------|-------|----------|----------|
+    | **Provisioning** | Auto-scaled | Auto-scaled | Manual per node |
+    | **Min Storage** | None | None | 15 GiB per node |
+    | **Max Storage** | Unlimited | Unlimited | 4 TiB per node (AWS), 64 TiB (GCP/Azure) |
+    | **Adjustment** | Automatic | Automatic | Increase only |
+    | **IOPS** | Included in RUs | Included | Provisioned (AWS) |
+  </Tab>
+  
+  <Tab title="Cloud Providers">
+    | Provider | Basic | Standard | Advanced |
+    |----------|-------|----------|----------|
+    | **AWS** | ✓ | ✓ | ✓ |
+    | **GCP** | ✓ | ✓ | ✓ |
+    | **Azure** | ✓ | ✗ | ✓ |
+    | **Multi-Cloud** | Yes (single cluster) | No | Yes (separate clusters) |
+  </Tab>
+</Tabs>
+
+### Networking
+
+<Tabs>
+  <Tab title="Access Control">
+    | Feature | Basic | Standard | Advanced |
+    |---------|-------|----------|----------|
+    | **Default Access** | Open (0.0.0.0/0) | Locked down | Locked down |
+    | **IP Allowlist** | 50 rules | 50 rules | 20 (AWS), 200 (GCP/Azure) |
+    | **Private Connectivity** | No | AWS PrivateLink, GCP PSC | All options |
+    | **VPC Peering** | No | GCP (legacy) | GCP |
+    | **Azure Private Link** | No | No | Yes |
+  </Tab>
+  
+  <Tab title="Security">
+    | Feature | Basic | Standard | Advanced |
+    |---------|-------|----------|----------|
+    | **TLS Encryption** | Required | Required | Required |
+    | **Encryption at Rest** | AES-256 | AES-256 | AES-256 + CMEK option |
+    | **CMEK** | No | No | Yes (with security add-on) |
+    | **Client Certificates** | No | No | Yes |
+    | **Egress Controls** | No | No | Yes |
+  </Tab>
+</Tabs>
+
+### Management and Monitoring
+
+<Tabs>
+  <Tab title="Console Features">
+    | Feature | Basic | Standard | Advanced |
+    |---------|-------|----------|----------|
+    | **Cloud Console** | Yes | Yes | Yes |
+    | **DB Console** | No | No | Yes |
+    | **Metrics Export** | No | Yes | Yes |
+    | **Log Export** | No | Yes | Yes |
+    | **Cluster Overview** | Yes | Yes | Yes |
+    | **SQL Users Mgmt** | Yes | Yes | Yes |
+  </Tab>
+  
+  <Tab title="Monitoring">
+    | Feature | Basic | Standard | Advanced |
+    |---------|-------|----------|----------|
+    | **Built-in Metrics** | Yes | Yes | Yes |
+    | **Request Units** | Yes | Yes | No |
+    | **SQL Metrics** | Yes | Yes | Yes |
+    | **Custom Dashboards** | Yes | Yes | Yes |
+    | **Prometheus Export** | No | Yes | Yes |
+    | **Datadog Export** | No | Yes | Yes |
+    | **CloudWatch Export** | No | Yes (AWS) | Yes (AWS) |
+  </Tab>
+  
+  <Tab title="Maintenance">
+    | Feature | Basic | Standard | Advanced |
+    |---------|-------|----------|----------|
+    | **Auto Upgrades** | Yes | Yes (configurable) | Yes (configurable) |
+    | **Maintenance Window** | No | No | Yes |
+    | **Version Selection** | No | Yes | Yes |
+    | **Rollback** | No | 72 hours (manual upgrades) | 72 hours (manual upgrades) |
+  </Tab>
+</Tabs>
+
+### Data Protection
+
+<Tabs>
+  <Tab title="Backups">
+    | Feature | Basic | Standard | Advanced |
+    |---------|-------|----------|----------|
+    | **Managed Backups** | Daily | Configurable frequency | Configurable frequency |
+    | **Backup Frequency** | Daily only | Daily or hourly | Daily or hourly |
+    | **Retention** | 30 days | 1-365 days | 1-365 days |
+    | **Point-in-Time** | No | Yes (with revision history) | Yes (with revision history) |
+    | **Self-Managed** | Yes (to userfile) | Yes (to cloud storage) | Yes (to cloud storage) |
+    | **Backup Storage** | Included in RUs | Usage-based pricing | Usage-based pricing |
+  </Tab>
+  
+  <Tab title="Recovery">
+    | Feature | Basic | Standard | Advanced |
+    |---------|-------|----------|----------|
+    | **Restore to Same** | Yes | Yes | Yes |
+    | **Restore to New** | Yes | Yes | Yes |
+    | **Cross-Region** | No | Yes | Yes |
+    | **Self-Service** | Yes | Yes | Yes |
+    | **RPO** | 24 hours | 1-24 hours | 1-24 hours |
+  </Tab>
+</Tabs>
+
+### Compliance and Support
+
+<Tabs>
+  <Tab title="Compliance">
+    | Certification | Basic | Standard | Advanced |
+    |---------------|-------|----------|----------|
+    | **SOC 2 Type 2** | ✓ | ✓ | ✓ |
+    | **ISO 27001** | ✓ | ✓ | ✓ |
+    | **PCI DSS** | ✗ | ✗ | ✓ (with security add-on) |
+    | **HIPAA** | ✗ | ✗ | ✓ (with security add-on) |
+    | **BAA Available** | ✗ | ✗ | ✓ |
+  </Tab>
+  
+  <Tab title="Support">
+    | Feature | Basic | Standard | Advanced |
+    |---------|-------|----------|----------|
+    | **Support Channel** | Email | Email | Email + Slack |
+    | **Response Time** | Best effort | Business hours | 24/7 for critical |
+    | **SLA** | None | 99.99% | 99.99% |
+    | **Dedicated Support** | No | No | Optional |
+    | **Training** | No | No | Optional |
+  </Tab>
+</Tabs>
+
+### Pricing and Billing
+
+<Tabs>
+  <Tab title="Pricing Model">
+    | Component | Basic | Standard | Advanced |
+    |-----------|-------|----------|----------|
+    | **Compute** | Usage (RUs) | Provisioned (vCPU-hours) | Provisioned (node-hours) |
+    | **Storage** | Usage (GiB-hours) | Usage (GiB-hours) | Provisioned (GiB-hours per node) |
+    | **IOPS** | Included in RUs | Included | Provisioned (AWS) |
+    | **Data Transfer** | Included in RUs | Usage-based | Usage-based |
+    | **Backups** | Included in RUs | Usage-based | Usage-based |
+    | **CDC** | Included in RUs | Usage-based | Usage-based |
+  </Tab>
+  
+  <Tab title="Billing">
+    | Feature | Basic | Standard | Advanced |
+    |---------|-------|----------|----------|
+    | **Billing Frequency** | Monthly | Monthly | Monthly |
+    | **Minimum Charge** | None ($15 free/month) | None | None |
+    | **Payment Methods** | Card, AWS MP, GCP MP | Card, AWS MP, GCP MP | Card, AWS MP, GCP MP, EA |
+    | **Usage Alerts** | Yes | Yes | Yes |
+    | **Enterprise Contracts** | No | Optional | Yes |
+  </Tab>
+</Tabs>
+
+## Use Case Recommendations
+
+### When to Choose Basic
+
+<Card title="Ideal For" icon="rocket">
+  **Scenarios:**
+  - Development and testing
+  - Proof of concepts
+  - Learning CockroachDB
+  - Hobby projects
+  - MVPs and early-stage startups
+  - Variable or unpredictable workloads
+  - Cost optimization for small workloads
+  
+  **Not Suitable For:**
+  - Production applications requiring SLA
+  - Compliance requirements (PCI, HIPAA)
+  - Applications needing private connectivity
+  - High-performance requirements
+</Card>
+
+### When to Choose Standard
+
+<Card title="Ideal For" icon="gauge-high">
+  **Scenarios:**
+  - Production applications
+  - Predictable workloads
+  - Growing applications
+  - Cost-sensitive production workloads
+  - Applications requiring 99.99% SLA
+  - Multi-region deployments
+  - Need for provisioned capacity
+  
+  **Not Suitable For:**
+  - Compliance requirements (PCI, HIPAA)
+  - Need for dedicated infrastructure
+  - DB Console requirement
+  - CMEK requirement
+</Card>
+
+### When to Choose Advanced
+
+<Card title="Ideal For" icon="shield">
+  **Scenarios:**
+  - Mission-critical applications
+  - Compliance requirements (PCI DSS, HIPAA)
+  - Enterprise deployments
+  - Applications needing CMEK
+  - Dedicated infrastructure requirement
+  - Advanced monitoring with DB Console
+  - Large-scale deployments
+  - Custom support requirements
+  
+  **Considerations:**
+  - Higher minimum cost
+  - More complex management
+  - Requires capacity planning
+</Card>
+
+## Migration Between Plans
+
+### Basic → Standard
+
+<Steps>
+  <Step title="Initiate Migration">
+    In Cloud Console, go to cluster **Actions** > **Change plan**
+  </Step>
+  
+  <Step title="Configure Capacity">
+    Set initial provisioned vCPU capacity based on current usage
+  </Step>
+  
+  <Step title="Complete Migration">
+    Migration completes in minutes with no downtime
+  </Step>
+</Steps>
+
+**Considerations:**
+- Pricing changes to provisioned model
+- Monitor usage to right-size capacity
+- Can scale capacity up/down after migration
+
+### Standard → Basic
+
+<Steps>
+  <Step title="Downgrade">
+    In Cloud Console, go to cluster **Actions** > **Change plan**
+  </Step>
+  
+  <Step title="Confirm">
+    Understand pricing changes to usage-based
+  </Step>
+</Steps>
+
+**Considerations:**
+- Pricing changes to usage-based (RUs)
+- Monitor RU consumption
+- May cost more if workload is constant
+
+### Basic/Standard → Advanced
+
+<Info>
+Migration to Advanced requires creating a new cluster and migrating data. Contact Support for assistance.
+</Info>
+
+**Migration Process:**
+1. Create new Advanced cluster
+2. Use backup/restore or EXPORT/IMPORT
+3. Update application connection strings
+4. Validate data migration
+5. Delete old cluster
+
+## Decision Matrix
+
+Use this matrix to help choose your plan:
+
+| If you need... | Choose |
+|----------------|--------|
+| Lowest cost for variable workload | **Basic** |
+| Development/testing environment | **Basic** |
+| Production SLA | **Standard** or **Advanced** |
+| Private connectivity | **Standard** or **Advanced** |
+| PCI DSS / HIPAA compliance | **Advanced** + Security add-on |
+| CMEK encryption | **Advanced** + Security add-on |
+| DB Console access | **Advanced** |
+| Dedicated infrastructure | **Advanced** |
+| Custom support | **Advanced** |
+| Most cost-effective production | **Standard** |
+
+## Pricing Examples
+
+See [Pricing](/cloud/pricing) for detailed cost comparisons and examples.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Create a Cluster" icon="server" href="/cloud/create-cluster">
+    Get started with your chosen plan
+  </Card>
+  
+  <Card title="Pricing Details" icon="dollar-sign" href="/cloud/pricing">
+    Understand costs in detail
+  </Card>
+  
+  <Card title="Calculator" icon="calculator" href="https://www.cockroachlabs.com/pricing">
+    Estimate your costs
+  </Card>
+  
+  <Card title="Contact Sales" icon="envelope" href="mailto:sales@cockroachlabs.com">
+    Discuss enterprise needs
+  </Card>
+</CardGroup>

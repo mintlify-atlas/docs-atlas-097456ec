@@ -1,0 +1,591 @@
+---
+title: Authorization in CockroachDB Cloud
+description: Learn about access management, roles, and permissions in CockroachDB Cloud.
+---
+
+CockroachDB Cloud uses a hierarchical authorization model with roles that can be assigned at organization, folder, and cluster scopes.
+
+## Authorization Model Overview
+
+CockroachDB Cloud has a two-level authorization hierarchy:
+
+1. **Organization Level**: Roles for Cloud Console, API, and cluster management
+2. **Cluster Level**: SQL roles for database operations
+
+This page focuses on organization-level authorization. For cluster-level SQL authorization, see the [CockroachDB Authorization documentation](https://www.cockroachlabs.com/docs/stable/authorization).
+
+## Organization User Roles
+
+Organization roles control what users and service accounts can do in CockroachDB Cloud.
+
+### Role Hierarchy
+
+Roles can be assigned at three scopes:
+
+1. **Organization**: Applies to all resources in the organization
+2. **Folder**: Applies to folder and all its clusters and subfolders
+3. **Cluster**: Applies to a specific cluster only
+
+<Info>
+Role inheritance is transitive - roles assigned at organization or folder level are inherited by child resources.
+</Info>
+
+### Available Roles
+
+<Tabs>
+  <Tab title="Administrative">
+    **Organization Admin**
+    - Full administrative access to the organization
+    - Invite and manage users
+    - Create and manage service accounts
+    - Assign roles to users and service accounts
+    - Manage billing and payments
+    - Configure organization settings and SSO
+    - Create, modify, and delete clusters
+    
+    **Scope**: Organization only
+    
+    **Use Case**: Organization administrators
+  </Tab>
+  
+  <Tab title="Billing">
+    **Billing Coordinator**
+    - View and manage billing details
+    - Add or change payment methods
+    - View invoices and usage
+    - Download billing reports
+    - Configure marketplace billing
+    
+    **Scope**: Organization only
+    
+    **Use Case**: Finance and accounting teams
+    
+    ---
+    
+    **Billing Viewer**
+    - View billing details
+    - View invoices and usage
+    - Download billing reports
+    - Cannot modify billing settings
+    
+    **Scope**: Organization only
+    
+    **Use Case**: Cost tracking and reporting
+  </Tab>
+  
+  <Tab title="Cluster Management">
+    **Cluster Admin**
+    - Create clusters (at organization/folder scope)
+    - Delete and modify clusters
+    - Manage SQL users on clusters
+    - Configure cluster settings
+    - Access DB Console (Advanced only)
+    - Assign cluster-scoped roles
+    - All Cluster Operator permissions
+    
+    **Scope**: Organization, Folder, or Cluster
+    
+    **Use Case**: Cluster administrators
+    
+    ---
+    
+    **Cluster Operator**
+    - View cluster details and configuration
+    - Scale cluster capacity
+    - Manage network authorization
+    - View and restore backups
+    - View metrics and performance data
+    - Cannot create/delete clusters
+    - Cannot manage SQL users
+    
+    **Scope**: Organization, Folder, or Cluster
+    
+    **Use Case**: Operations teams
+    
+    ---
+    
+    **Cluster Creator**
+    - Create new clusters
+    - Automatically becomes Cluster Admin on created clusters
+    - Cannot modify existing clusters
+    
+    **Scope**: Organization or Folder
+    
+    **Use Case**: Self-service cluster provisioning
+  </Tab>
+  
+  <Tab title="Developer">
+    **Cluster Developer**
+    - View cluster details
+    - Get connection strings
+    - Access DB Console (Advanced only)
+    - View metrics
+    - Cannot modify cluster configuration
+    - Cluster Admin must create SQL credentials
+    
+    **Scope**: Organization, Folder, or Cluster
+    
+    **Use Case**: Application developers
+    
+    ---
+    
+    **Cluster Monitor**
+    - View SQL Activity pages (Statements, Transactions, Sessions)
+    - View Jobs page
+    - View Insights page
+    - Read-only access to workload health
+    
+    **Scope**: Organization, Folder, or Cluster
+    
+    **Use Case**: Performance monitoring
+  </Tab>
+  
+  <Tab title="Observability">
+    **Metrics Viewer**
+    - View cluster metrics
+    - Access metrics export API
+    - Access log export API
+    - Cannot modify cluster
+    
+    **Scope**: Organization, Folder, or Cluster
+    
+    **Use Case**: Monitoring integrations
+  </Tab>
+  
+  <Tab title="Folder Management">
+    **Folder Admin**
+    - Create and manage folders
+    - Move clusters between folders
+    - Assign folder-scoped roles
+    - View folder billing
+    
+    **Scope**: Organization or Folder
+    
+    **Use Case**: Organizational structure management
+    
+    ---
+    
+    **Folder Mover**
+    - Move clusters between folders
+    - Cannot create or delete folders
+    
+    **Scope**: Organization or Folder
+    
+    **Use Case**: Cluster organization
+  </Tab>
+</Tabs>
+
+### Role Permissions Matrix
+
+| Permission | Org Admin | Cluster Admin | Cluster Operator | Cluster Developer | Metrics Viewer |
+|------------|-----------|---------------|------------------|-------------------|----------------|
+| Create clusters | ✓ | ✓ (org scope) | ✗ | ✗ | ✗ |
+| Delete clusters | ✓ | ✓ | ✗ | ✗ | ✗ |
+| Scale clusters | ✓ | ✓ | ✓ | ✗ | ✗ |
+| Manage SQL users | ✓ | ✓ | ✗ | ✗ | ✗ |
+| View connection info | ✓ | ✓ | ✓ | ✓ | ✗ |
+| Configure networking | ✓ | ✓ | ✓ | ✗ | ✗ |
+| View metrics | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Manage backups | ✓ | ✓ | ✓ | ✗ | ✗ |
+| Access DB Console | ✓ | ✓ | ✓ | ✓ | ✗ |
+| Invite users | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Manage billing | ✓ | ✗ | ✗ | ✗ | ✗ |
+
+## Manage Organization Users
+
+Add and manage users in your organization.
+
+### Invite Users
+
+<Steps>
+  <Step title="Access User Management">
+    1. Click **Access Management** in the Cloud Console
+    2. Click **Users** tab
+  </Step>
+  
+  <Step title="Send Invitation">
+    1. Click **Invite User**
+    2. Enter email address
+    3. Select roles to assign
+    4. Choose scope (Organization, Folder, or Cluster)
+    5. Click **Send Invitation**
+  </Step>
+  
+  <Step title="User Accepts">
+    User receives email invitation and creates account
+  </Step>
+</Steps>
+
+<Info>
+New users are automatically assigned the **Organization Member** role, which grants no permissions beyond organization membership.
+</Info>
+
+### Change User Roles
+
+<Steps>
+  <Step title="Find User">
+    Go to **Access Management** > **Users**
+  </Step>
+  
+  <Step title="Edit Roles">
+    1. Click on the user
+    2. In **Roles** section, click **Edit**
+    3. Add or remove roles
+    4. Select appropriate scope for each role
+    5. Click **Save**
+  </Step>
+</Steps>
+
+### Remove User
+
+<Steps>
+  <Step title="Select User">
+    Go to **Access Management** > **Users** and select the user
+  </Step>
+  
+  <Step title="Remove from Organization">
+    1. Click action menu (•••)
+    2. Select **Remove from organization**
+    3. Confirm removal
+  </Step>
+</Steps>
+
+<Warning>
+Removed users immediately lose all access to the organization and its clusters.
+</Warning>
+
+## Service Accounts
+
+Service accounts are used for automated access via the Cloud API.
+
+### Create Service Account
+
+<Steps>
+  <Step title="Navigate to Service Accounts">
+    Go to **Access Management** > **Service Accounts**
+  </Step>
+  
+  <Step title="Create Account">
+    1. Click **Create Service Account**
+    2. Enter name and description
+    3. Assign roles and scopes
+    4. Click **Create**
+  </Step>
+  
+  <Step title="Generate API Key">
+    1. Click on the new service account
+    2. Click **Create API Key**
+    3. Copy and securely store the API key
+    4. The key is shown only once
+  </Step>
+</Steps>
+
+### Manage API Keys
+
+<Steps>
+  <Step title="View Keys">
+    1. Go to **Service Accounts**
+    2. Click on service account
+    3. View **API Keys** section
+  </Step>
+  
+  <Step title="Rotate Keys">
+    1. Create new API key
+    2. Update applications with new key
+    3. Delete old key after migration
+  </Step>
+  
+  <Step title="Revoke Key">
+    1. Find key to revoke
+    2. Click **Delete**
+    3. Confirm deletion
+  </Step>
+</Steps>
+
+<Warning>
+**API Key Security:**
+- Treat API keys like passwords
+- Never commit keys to version control
+- Use environment variables
+- Rotate keys regularly
+- Delete unused keys immediately
+</Warning>
+
+## Organize with Folders
+
+Folders help organize clusters and manage permissions hierarchically.
+
+### Create Folders
+
+<Steps>
+  <Step title="Create Folder">
+    1. On **Clusters** page, click **New Folder**
+    2. Enter folder name
+    3. Select parent folder (optional)
+    4. Click **Create**
+  </Step>
+  
+  <Step title="Move Clusters">
+    1. Select cluster
+    2. Click **Move to folder**
+    3. Select destination folder
+    4. Click **Move**
+  </Step>
+</Steps>
+
+### Assign Folder Roles
+
+Roles assigned to folders are inherited by all clusters and subfolders:
+
+<Steps>
+  <Step title="Access Folder">
+    Click on folder name in Clusters page
+  </Step>
+  
+  <Step title="Manage Roles">
+    1. Click **Access** tab
+    2. Click **Add user or service account**
+    3. Select user/service account
+    4. Assign roles
+    5. Click **Save**
+  </Step>
+</Steps>
+
+**Folder Benefits:**
+- Organized cluster management
+- Inherited permissions
+- Grouped billing reports
+- Team-based access control
+
+## SQL User Management
+
+Manage SQL users for database access.
+
+### Create SQL Users
+
+Only users with Cluster Admin or Organization Admin can create SQL users:
+
+<Steps>
+  <Step title="Navigate to SQL Users">
+    1. Select cluster
+    2. Click **SQL Users**
+  </Step>
+  
+  <Step title="Add User">
+    1. Click **Add User**
+    2. Enter username
+    3. Set password
+    4. Click **Create**
+  </Step>
+</Steps>
+
+### Grant SQL Privileges
+
+Control database access with SQL privileges:
+
+```sql
+-- Create read-only user
+CREATE USER readonly_user;
+GRANT SELECT ON DATABASE mydb TO readonly_user;
+
+-- Create application user
+CREATE USER app_user;
+GRANT ALL ON DATABASE mydb TO app_user;
+
+-- Create admin user
+CREATE USER admin_user;
+GRANT admin TO admin_user;
+
+-- Grant specific table access
+GRANT SELECT, INSERT, UPDATE ON TABLE customers TO app_user;
+```
+
+### SQL Roles
+
+Use SQL roles to group permissions:
+
+```sql
+-- Create role for analysts
+CREATE ROLE analyst;
+GRANT SELECT ON DATABASE analytics TO analyst;
+
+-- Assign role to users
+GRANT analyst TO user1, user2;
+
+-- Create role for developers
+CREATE ROLE developer;
+GRANT ALL ON DATABASE dev TO developer;
+GRANT developer TO dev_team_user;
+```
+
+## SSO Integration
+
+Integrate with your identity provider for centralized access control.
+
+### Configure SSO
+
+<Steps>
+  <Step title="Access SSO Settings">
+    Go to **Organization Settings** > **SSO**
+  </Step>
+  
+  <Step title="Add Identity Provider">
+    1. Click **Configure SSO**
+    2. Select IdP type (SAML 2.0)
+    3. Upload IdP metadata
+    4. Configure attribute mappings
+  </Step>
+  
+  <Step title="Enable SSO">
+    1. Test SSO configuration
+    2. Toggle **Enable SSO**
+    3. Optionally enforce SSO
+  </Step>
+</Steps>
+
+### SCIM Provisioning
+
+Automate user provisioning with SCIM:
+
+<Steps>
+  <Step title="Enable SCIM">
+    Go to **Organization Settings** > **SCIM**
+  </Step>
+  
+  <Step title="Generate Token">
+    1. Click **Enable SCIM**
+    2. Copy SCIM endpoint URL
+    3. Generate and copy SCIM token
+  </Step>
+  
+  <Step title="Configure IdP">
+    Configure SCIM in your identity provider with:
+    - SCIM endpoint URL
+    - SCIM token
+    - Attribute mappings
+  </Step>
+</Steps>
+
+**SCIM Benefits:**
+- Automatic user provisioning
+- Automatic deprovisioning
+- Role synchronization
+- Reduced administrative overhead
+
+## Best Practices
+
+### Principle of Least Privilege
+
+<Card title="Grant Minimum Necessary Access" icon="shield">
+  - Start with least privileged role
+  - Grant additional permissions as needed
+  - Review permissions regularly
+  - Remove unused access immediately
+</Card>
+
+### Role Assignment Strategy
+
+**Organization Scope:**
+- Use for organization-wide administrators
+- Limit number of Organization Admins
+- Use service accounts for automation
+
+**Folder Scope:**
+- Use for team-based access
+- Organize by environment (dev, staging, prod)
+- Organize by department or project
+
+**Cluster Scope:**
+- Use for cluster-specific access
+- Grant to individual developers
+- Use for temporary access
+
+### Access Reviews
+
+Regularly review and audit access:
+
+<Steps>
+  <Step title="Monthly Reviews">
+    - Review new users and roles
+    - Check for unused accounts
+    - Verify role assignments
+  </Step>
+  
+  <Step title="Quarterly Audits">
+    - Full access review
+    - Update role assignments
+    - Remove inactive users
+    - Rotate service account keys
+  </Step>
+  
+  <Step title="Annual Reviews">
+    - Comprehensive security audit
+    - Review folder structure
+    - Update policies and procedures
+  </Step>
+</Steps>
+
+### Service Account Management
+
+<Card title="Service Account Best Practices" icon="robot">
+  - One service account per application
+  - Descriptive names and documentation
+  - Rotate API keys every 90 days
+  - Delete unused service accounts
+  - Monitor API usage
+</Card>
+
+## Troubleshooting
+
+### Permission Denied
+
+**Issue**: User cannot perform action
+
+**Solutions**:
+1. Check user's assigned roles
+2. Verify role scope (org, folder, cluster)
+3. Confirm role provides necessary permission
+4. Check if user is in correct organization
+5. Contact Organization Admin
+
+### Cannot Invite User
+
+**Issue**: Invitation fails
+
+**Solutions**:
+1. Verify you have Organization Admin role
+2. Check email address is correct
+3. Confirm user doesn't already exist
+4. Check organization user limits
+5. Try different email address
+
+### SQL User Cannot Connect
+
+**Issue**: SQL authentication fails
+
+**Solutions**:
+1. Verify SQL user exists on cluster
+2. Reset password if forgotten
+3. Check network authorization
+4. Verify SQL privileges granted
+5. Confirm connection string is correct
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/cloud/authentication">
+    Learn about authentication methods
+  </Card>
+  
+  <Card title="Network Security" icon="shield" href="/cloud/network-security">
+    Configure network authorization
+  </Card>
+  
+  <Card title="Compliance" icon="certificate" href="/cloud/compliance">
+    Security compliance and certifications
+  </Card>
+  
+  <Card title="Organization Settings" icon="building" href="https://www.cockroachlabs.com/docs/cockroachcloud/managing-access">
+    Detailed access management guide
+  </Card>
+</CardGroup>

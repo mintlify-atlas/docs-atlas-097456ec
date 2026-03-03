@@ -1,0 +1,497 @@
+---
+title: Schema Design Best Practices
+description: Best practices for designing schemas when migrating to CockroachDB for optimal performance and scalability.
+---
+
+When migrating to CockroachDB, proper schema design is critical for achieving optimal performance and scalability. This guide covers best practices for tables, primary keys, indexes, and data types.
+
+## Primary key design
+
+Primary keys are the foundation of your schema design in CockroachDB. They determine how data is distributed across the cluster and significantly impact query performance.
+
+### Avoid sequential primary keys
+
+<Warning>
+Sequential primary keys (like auto-incrementing integers or timestamps) can create hotspots that severely degrade performance in distributed databases.
+</Warning>
+
+Problematic patterns:
+
+```sql
+-- ❌ Avoid: Auto-incrementing integer
+CREATE TABLE orders (
+    id SERIAL PRIMARY KEY,
+    customer_id INT,
+    order_date TIMESTAMPTZ
+);
+
+-- ❌ Avoid: Timestamp as primary key
+CREATE TABLE events (
+    event_time TIMESTAMPTZ PRIMARY KEY,
+    event_type STRING,
+    data JSONB
+);
+```
+
+Why this is problematic:
+- All writes go to a single range (the "tail" of the sequential key space)
+- Creates a hotspot on a single node
+- Limits write throughput to a single node's capacity
+- Causes transaction contention
+
+### Use UUID primary keys
+
+For single-column primary keys, use randomly generated UUIDs:
+
+```sql
+-- ✅ Recommended: Random UUID
+CREATE TABLE orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID,
+    order_date TIMESTAMPTZ,
+    total DECIMAL(10,2)
+);
+```
+
+Benefits:
+- Distributes writes evenly across the cluster
+- Prevents hotspots
+- Scales linearly with cluster size
+
+### Use composite primary keys
+
+<Tip>
+Composite primary keys are often the best choice for distributed databases. They allow you to partition data by a high-cardinality column while maintaining ordering within partitions.
+</Tip>
+
+Recommended pattern:
+
+```sql
+-- ✅ Best: Composite key with well-distributed prefix
+CREATE TABLE user_events (
+    user_id UUID,
+    event_time TIMESTAMPTZ,
+    event_type STRING,
+    event_data JSONB,
+    PRIMARY KEY (user_id, event_time)
+);
+```
+
+Key principles:
+- First column should be high-cardinality and well-distributed
+- Subsequent columns can be monotonically increasing (e.g., timestamps)
+- Aligns with common query patterns (filtering by user, ordering by time)
+
+### Hash-sharded indexes for sequential keys
+
+If you must use sequential keys, use hash-sharded indexes:
+
+```sql
+-- ✅ Acceptable: Hash-sharded index on sequential key
+CREATE TABLE events (
+    event_id UUID DEFAULT gen_random_uuid(),
+    event_time TIMESTAMPTZ,
+    event_type STRING,
+    PRIMARY KEY (event_id),
+    INDEX events_by_time (event_time) USING HASH WITH (bucket_count=16)
+);
+```
+
+Hash sharding:
+- Distributes sequential key ranges across multiple shards
+- Prevents hotspots on sequential writes
+- Trades off range scan efficiency for write throughput
+
+## Table design
+
+### Explicitly define primary keys
+
+<Warning>
+Always explicitly define a primary key. If you don't, CockroachDB creates a hidden `rowid` column that can lead to poor performance.
+</Warning>
+
+```sql
+-- ❌ Avoid: No primary key
+CREATE TABLE products (
+    name STRING,
+    price DECIMAL
+);
+
+-- ✅ Recommended: Explicit primary key
+CREATE TABLE products (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name STRING,
+    price DECIMAL
+);
+```
+
+To enforce explicit primary keys cluster-wide:
+
+```sql
+SET CLUSTER SETTING sql.defaults.require_explicit_primary_keys.enabled = true;
+```
+
+### Use appropriate data types
+
+Choose data types that match your data and query patterns:
+
+| Use Case | Recommended Type | Notes |
+|----------|-----------------|-------|
+| Unique identifiers | `UUID` | Use `gen_random_uuid()` for default |
+| Timestamps | `TIMESTAMPTZ` | Always store with timezone |
+| Boolean values | `BOOL` | More efficient than `INT` or `STRING` |
+| Monetary values | `DECIMAL(p,s)` | Exact precision for financial data |
+| Large integers | `INT8` (or `INT`) | CockroachDB `INT` defaults to 64-bit |
+| Small integers | `INT4` or `INT2` | When range is known |
+| Enum values | `ENUM` type | Better than `STRING` for fixed sets |
+| JSON documents | `JSONB` | Faster than `JSON`, supports indexing |
+
+### Set size limits on variable-length columns
+
+<Warning>
+Always set size limits on variable-length columns, especially those that are indexed. Values exceeding 1MB can cause write amplification and performance issues.
+</Warning>
+
+```sql
+-- ❌ Avoid: Unbounded string
+CREATE TABLE users (
+    id UUID PRIMARY KEY,
+    email STRING
+);
+
+-- ✅ Recommended: Bounded string
+CREATE TABLE users (
+    id UUID PRIMARY KEY,
+    email STRING(255),
+    bio STRING(2000)
+);
+```
+
+### Use computed columns
+
+Computed columns can improve query performance:
+
+```sql
+CREATE TABLE orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    subtotal DECIMAL(10,2),
+    tax_rate DECIMAL(4,3),
+    tax DECIMAL(10,2) AS (subtotal * tax_rate) STORED,
+    total DECIMAL(10,2) AS (subtotal + tax) STORED
+);
+```
+
+Benefits:
+- Precompute expensive calculations
+- Ensure consistency
+- Can be indexed for faster queries
+
+## Secondary index design
+
+### Index frequently queried columns
+
+Create indexes on columns used in `WHERE` clauses, `JOIN` conditions, and `ORDER BY` clauses:
+
+```sql
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email STRING(255) UNIQUE,
+    last_name STRING(100),
+    first_name STRING(100),
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Index for email lookups
+CREATE UNIQUE INDEX users_email_idx ON users(email);
+
+-- Composite index for name searches
+CREATE INDEX users_name_idx ON users(last_name, first_name);
+```
+
+### Use covering indexes with STORING
+
+Store additional columns in an index to avoid table lookups:
+
+```sql
+-- Query: SELECT email, created_at FROM users WHERE last_name = 'Smith';
+
+-- ✅ Covering index
+CREATE INDEX users_last_name_covering
+    ON users(last_name)
+    STORING (email, created_at);
+```
+
+Benefits:
+- Eliminates index joins
+- Faster query execution
+- Trade-off: increases index size
+
+### Avoid over-indexing
+
+<Warning>
+Every index has a cost:
+- Increases write latency
+- Consumes storage space
+- Requires maintenance
+
+Only create indexes that significantly improve query performance.
+</Warning>
+
+General guidelines:
+- Start with primary key and unique constraints
+- Add indexes based on actual query patterns
+- Monitor index usage with `SHOW INDEXES`
+- Remove unused indexes
+
+### Use partial indexes
+
+Partial indexes index only a subset of rows:
+
+```sql
+-- Index only active orders
+CREATE INDEX active_orders
+    ON orders(created_at)
+    WHERE status = 'active';
+
+-- Index only recent events
+CREATE INDEX recent_events
+    ON events(event_type)
+    WHERE event_time > now() - INTERVAL '30 days';
+```
+
+Benefits:
+- Smaller index size
+- Faster index maintenance
+- Better query performance for filtered queries
+
+### Use inverted indexes for JSON and arrays
+
+For JSON and array columns, use inverted indexes:
+
+```sql
+CREATE TABLE products (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name STRING,
+    attributes JSONB,
+    tags STRING[]
+);
+
+-- Inverted index for JSON
+CREATE INVERTED INDEX product_attributes ON products(attributes);
+
+-- Inverted index for arrays
+CREATE INVERTED INDEX product_tags ON products(tags);
+```
+
+Enables efficient queries:
+
+```sql
+-- JSON queries
+SELECT * FROM products WHERE attributes @> '{"color": "red"}';
+
+-- Array queries
+SELECT * FROM products WHERE 'electronics' = ANY(tags);
+```
+
+## Schema migration patterns
+
+### Convert auto-increment to UUID
+
+When migrating from databases with auto-incrementing primary keys:
+
+<CodeGroup>
+```sql PostgreSQL → CockroachDB
+-- Before (PostgreSQL)
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255)
+);
+
+-- After (CockroachDB)
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email STRING(255)
+);
+```
+
+```sql MySQL → CockroachDB
+-- Before (MySQL)
+CREATE TABLE orders (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT,
+    total DECIMAL(10,2)
+);
+
+-- After (CockroachDB)
+CREATE TABLE orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID,
+    total DECIMAL(10,2)
+);
+```
+</CodeGroup>
+
+### Handle sequences
+
+<Note>
+MOLT Fetch does not automatically migrate sequences. If your source database uses sequences, you have several options:
+</Note>
+
+1. **Replace with UUID** (recommended):
+```sql
+CREATE TABLE invoices (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    invoice_number STRING UNIQUE,
+    amount DECIMAL(10,2)
+);
+```
+
+2. **Use unique_rowid()** (if sequential IDs are needed):
+```sql
+CREATE TABLE invoices (
+    id INT8 PRIMARY KEY DEFAULT unique_rowid(),
+    amount DECIMAL(10,2)
+);
+```
+
+3. **Manual sequence creation**:
+```sql
+CREATE SEQUENCE invoice_seq;
+
+CREATE TABLE invoices (
+    id INT8 PRIMARY KEY DEFAULT nextval('invoice_seq'),
+    amount DECIMAL(10,2)
+);
+
+-- After data load, update sequence
+SELECT setval('invoice_seq', (SELECT max(id) FROM invoices));
+```
+
+### Normalize integer sizes
+
+<Info>
+CockroachDB `INT` is 64-bit by default, while PostgreSQL and MySQL default to 32-bit integers.
+</Info>
+
+```sql
+-- PostgreSQL/MySQL INT → CockroachDB
+-- Option 1: Keep as INT8 (64-bit)
+CREATE TABLE products (
+    id INT8,  -- or just INT
+    quantity INT8
+);
+
+-- Option 2: Use INT4 for 32-bit compatibility
+CREATE TABLE products (
+    id INT4,
+    quantity INT4
+);
+```
+
+## Foreign key relationships
+
+### Define foreign keys carefully
+
+```sql
+CREATE TABLE customers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email STRING(255) UNIQUE,
+    name STRING(255)
+);
+
+CREATE TABLE orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID NOT NULL,
+    order_date TIMESTAMPTZ DEFAULT now(),
+    total DECIMAL(10,2),
+    CONSTRAINT fk_customer
+        FOREIGN KEY (customer_id)
+        REFERENCES customers(id)
+        ON DELETE CASCADE
+);
+```
+
+<Tip>
+Use `ON DELETE CASCADE` or `ON DELETE SET NULL` to maintain referential integrity automatically.
+</Tip>
+
+### Interleave tables (advanced)
+
+For tables with one-to-many relationships and frequent joins:
+
+```sql
+CREATE TABLE customers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name STRING
+);
+
+CREATE TABLE orders (
+    customer_id UUID,
+    order_id UUID,
+    order_date TIMESTAMPTZ,
+    PRIMARY KEY (customer_id, order_id)
+) INTERLEAVE IN PARENT customers (customer_id);
+```
+
+Benefits:
+- Co-locates related data
+- Improves join performance
+- Reduces cross-node traffic
+
+## Migration checklist
+
+Before migrating your schema:
+
+- [ ] Replace auto-increment keys with UUIDs or composite keys
+- [ ] Replace sequential primary keys with hash-sharded indexes or composite keys
+- [ ] Add size limits to all variable-length columns
+- [ ] Explicitly define primary keys for all tables
+- [ ] Convert ENUM types to CockroachDB ENUM or CHECK constraints
+- [ ] Update integer types (INT4 vs INT8) based on requirements
+- [ ] Review and optimize secondary indexes
+- [ ] Plan for sequence migration if applicable
+- [ ] Add foreign key constraints with appropriate ON DELETE actions
+- [ ] Test schema with representative queries
+
+## Testing your schema
+
+After migration, validate your schema design:
+
+```sql
+-- Check for tables without explicit primary keys
+SELECT table_schema, table_name
+FROM information_schema.tables
+WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'crdb_internal')
+  AND table_name NOT IN (
+    SELECT table_name
+    FROM information_schema.table_constraints
+    WHERE constraint_type = 'PRIMARY KEY'
+  );
+
+-- Review index usage
+SHOW INDEXES FROM database_name;
+
+-- Check for large column values
+SELECT
+    table_name,
+    column_name,
+    data_type,
+    character_maximum_length
+FROM information_schema.columns
+WHERE character_maximum_length IS NULL
+  AND data_type IN ('STRING', 'BYTES');
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="PostgreSQL Migration" icon="database" href="/migration/postgres-migration">
+    Migrate from PostgreSQL to CockroachDB
+  </Card>
+  <Card title="MySQL Migration" icon="database" href="/migration/mysql-migration">
+    Migrate from MySQL to CockroachDB
+  </Card>
+  <Card title="Migration Overview" icon="book" href="/migration/migration-overview">
+    Learn about MOLT tools and migration flows
+  </Card>
+</CardGroup>

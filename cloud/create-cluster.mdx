@@ -1,0 +1,240 @@
+---
+title: Creating a CockroachDB Cloud Cluster
+description: Learn how to create and configure CockroachDB Cloud clusters across different plans.
+---
+
+This page guides you through creating a CockroachDB Cloud cluster using the Cloud Console. Choose the plan that best fits your needs: Basic, Standard, or Advanced.
+
+## Before You Begin
+
+- Sign up for a [CockroachDB Cloud account](https://cockroachlabs.cloud)
+- Have billing information ready (credit card or cloud marketplace subscription)
+- Plan your cluster configuration based on your workload requirements
+
+<Info>
+If you need permission to create a cluster, contact a CockroachDB Cloud Organization Admin.
+</Info>
+
+## Choose Your Plan
+
+Select the plan that best matches your requirements:
+
+- **Basic**: Usage-based pricing for development and small workloads
+- **Standard**: Provisioned compute with usage-based storage (Preview)
+- **Advanced**: Fully provisioned with enterprise features
+
+For a detailed comparison, see the [Plan Comparison](/cloud/plan-comparison) page.
+
+## Create a Standard Cluster
+
+<Steps>
+  <Step title="Start Cluster Creation">
+    1. Log in to the [CockroachDB Cloud Console](https://cockroachlabs.cloud)
+    2. If you have multiple organizations, select the correct one
+    3. Click **Create Cluster** on the Overview page
+    4. Select **Standard** plan
+  </Step>
+  
+  <Step title="Select Cloud Provider">
+    Choose your deployment environment:
+    - **Google Cloud** or **AWS**
+    - Azure is not yet supported for Standard clusters
+    
+    <Info>
+    For optimal performance, create your cluster on the same cloud provider and in the same regions as your existing services.
+    </Info>
+  </Step>
+  
+  <Step title="Configure Regions">
+    Select at least one region for your cluster.
+    
+    **Single-Region Cluster:**
+    - Choose the region closest to your users
+    - Lower cost and complexity
+    
+    **Multi-Region Cluster:**
+    - Can survive the loss of a single region
+    - Higher availability but increased cost
+    - CockroachDB optimizes access from the primary region
+    
+    <Warning>
+    You cannot remove a region after cluster creation.
+    </Warning>
+  </Step>
+  
+  <Step title="Provision Cluster Capacity">
+    Set your provisioned compute capacity in vCPUs.
+    
+    **Recommendations:**
+    - Minimum 4-8 vCPUs for production workloads
+    - Allow 40% above expected peak workload
+    - You can adjust capacity later (3 decreases per 7 days)
+    
+    The pricing estimate updates as you adjust capacity.
+  </Step>
+  
+  <Step title="Enter Billing Details">
+    1. Verify your cluster configuration and cost estimate
+    2. Add payment method:
+       - Credit card
+       - AWS Marketplace subscription
+       - Google Cloud Marketplace subscription
+    3. Apply trial credits if available
+  </Step>
+  
+  <Step title="Name Your Cluster">
+    Give your cluster a descriptive name:
+    - 6-20 characters in length
+    - Lowercase letters, numbers, and dashes
+    - No leading or trailing dashes
+    - Cannot be changed after creation
+  </Step>
+  
+  <Step title="Create the Cluster">
+    Click **Create cluster**. Your cluster will be ready in approximately 20-30 seconds.
+  </Step>
+</Steps>
+
+## Create an Advanced Cluster
+
+<Steps>
+  <Step title="Start Cluster Creation">
+    1. Log in to the [CockroachDB Cloud Console](https://cockroachlabs.cloud)
+    2. Click **Create Cluster**
+    3. Select **Advanced** plan
+  </Step>
+  
+  <Step title="Select Cloud Provider">
+    Choose from:
+    - Amazon Web Services (AWS)
+    - Google Cloud Platform (GCP)
+    - Microsoft Azure
+  </Step>
+  
+  <Step title="Configure Regions and Nodes">
+    1. Select one or more regions
+    2. Specify the number of nodes per region
+    3. For multi-region clusters, configure at least 3 regions with 3+ nodes each
+    
+    <Info>
+    For optimal performance, configure the same number of nodes in each region.
+    </Info>
+  </Step>
+  
+  <Step title="Configure Compute">
+    Select the compute size for each node:
+    - **vCPUs**: 2, 4, 8, 16, 32, or more
+    - **RAM**: Automatically sized based on vCPUs
+    - Applies to all nodes in the cluster
+  </Step>
+  
+  <Step title="Configure Storage">
+    Set storage per node:
+    - **AWS**: Minimum 15 GiB, includes provisioned IOPS
+    - **GCP/Azure**: Minimum 15 GiB
+    - Cannot be decreased after creation
+  </Step>
+  
+  <Step title="Optional: Enable Security Add-on">
+    For PCI DSS compliance, enable the Advanced Security add-on:
+    - CMEK (Customer-Managed Encryption Keys)
+    - Enhanced audit logging
+    - Additional compliance certifications
+  </Step>
+  
+  <Step title="Configure Networking (Optional)">
+    Set up private connectivity:
+    - **AWS**: AWS PrivateLink
+    - **GCP**: VPC Peering or Private Service Connect
+    - **Azure**: Azure Private Link
+    
+    You can also configure this after cluster creation.
+  </Step>
+  
+  <Step title="Complete Cluster Creation">
+    1. Review configuration and pricing
+    2. Add payment details
+    3. Name your cluster
+    4. Click **Create cluster**
+    
+    Provisioning takes approximately 20-30 minutes.
+  </Step>
+</Steps>
+
+## Create a Basic Cluster
+
+<Steps>
+  <Step title="Start Creation">
+    1. Log in to Cloud Console
+    2. Click **Create Cluster**
+    3. Select **Basic** plan
+  </Step>
+  
+  <Step title="Configure Cluster">
+    1. **Cloud Provider**: AWS, GCP, or Azure
+    2. **Regions**: Select 1-6 regions
+    3. **Spend Limit**: Set maximum monthly spending (optional)
+  </Step>
+  
+  <Step title="Create and Connect">
+    1. Name your cluster
+    2. Click **Create cluster**
+    3. Cluster is ready in seconds
+  </Step>
+</Steps>
+
+<Info>
+Basic clusters automatically scale based on usage. You're only charged for resources consumed.
+</Info>
+
+## Post-Creation Steps
+
+After your cluster is created:
+
+<Steps>
+  <Step title="Create SQL Users">
+    Navigate to **SQL Users** and create your first user with a strong password.
+  </Step>
+  
+  <Step title="Authorize Networks">
+    Add IP addresses or ranges that can connect to your cluster under **Networking**.
+  </Step>
+  
+  <Step title="Connect to Cluster">
+    Use the **Connect** button to get connection strings for your applications.
+  </Step>
+  
+  <Step title="Configure Backups">
+    Set up backup schedules and retention policies under **Backup and Restore**.
+  </Step>
+</Steps>
+
+## Cluster Creation Options Comparison
+
+| Feature | Basic | Standard | Advanced |
+|---------|-------|----------|----------|
+| **Creation Time** | Seconds | 20-30 seconds | 20-30 minutes |
+| **Default Network Access** | Open (0.0.0.0/0) | Locked down | Locked down |
+| **Scaling** | Automatic | Manual capacity adjustment | Manual node/storage adjustment |
+| **Private Connectivity** | Not available | AWS PrivateLink, GCP PSC | All options |
+| **DB Console** | Not available | Not available | Available |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Connect to Your Cluster" icon="plug" href="/cloud/connect-to-cluster">
+    Learn how to connect applications
+  </Card>
+  
+  <Card title="Manage Your Cluster" icon="sliders" href="/cloud/cluster-management">
+    Configure and manage your cluster
+  </Card>
+  
+  <Card title="Set Up Monitoring" icon="chart-line" href="/cloud/monitoring">
+    Monitor cluster performance
+  </Card>
+  
+  <Card title="Configure Backups" icon="database" href="/cloud/backup-restore">
+    Set up backup and restore
+  </Card>
+</CardGroup>

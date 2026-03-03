@@ -1,0 +1,301 @@
+---
+title: Data Types
+description: Reference guide for SQL data types supported by CockroachDB
+---
+
+CockroachDB supports a wide range of data types for storing and manipulating different kinds of data. All PostgreSQL data types are supported with some extensions for distributed systems.
+
+## Supported Types
+
+The following table lists all data types available in CockroachDB:
+
+<ParamField path="ARRAY" type="array">
+  A 1-dimensional, 1-indexed, homogeneous array of any non-array data type.
+
+  ```sql
+  SELECT ARRAY['sky','road','car'];
+  -- Result: {"sky","road","car"}
+  ```
+</ParamField>
+
+<ParamField path="BIT" type="bit string">
+  A string of binary digits (bits).
+
+  ```sql
+  SELECT B'10010101';
+  ```
+</ParamField>
+
+<ParamField path="BOOL" type="boolean">
+  A Boolean value: `true` or `false`.
+
+  ```sql
+  SELECT true, false;
+  ```
+</ParamField>
+
+<ParamField path="BYTES" type="byte array">
+  A string of binary characters.
+
+  ```sql
+  SELECT b'\141\061\142\062\143\063';
+  ```
+</ParamField>
+
+<ParamField path="DATE" type="date">
+  A date without time zone information.
+
+  ```sql
+  SELECT DATE '2016-01-25';
+  ```
+</ParamField>
+
+<ParamField path="DECIMAL" type="numeric">
+  An exact, fixed-point number. Use for monetary values and when precision is critical.
+
+  ```sql
+  SELECT 1.2345::DECIMAL;
+  SELECT DECIMAL '99.99';
+  ```
+</ParamField>
+
+<ParamField path="ENUM" type="enumerated">
+  A user-defined data type comprised of a set of static values.
+
+  ```sql
+  CREATE TYPE suit AS ENUM ('club', 'diamond', 'heart', 'spade');
+  ```
+</ParamField>
+
+<ParamField path="FLOAT" type="floating-point">
+  A 64-bit, inexact, floating-point number.
+
+  ```sql
+  SELECT 1.2345::FLOAT;
+  SELECT FLOAT '123.45e-3';
+  ```
+</ParamField>
+
+<ParamField path="INET" type="network address">
+  An IPv4 or IPv6 address.
+
+  ```sql
+  SELECT INET '192.168.0.1';
+  SELECT INET '2001:4f8:3:ba:2e0:81ff:fe22:d1f1';
+  ```
+</ParamField>
+
+<ParamField path="INT" type="integer">
+  A signed integer, up to 64 bits. Aliases: `INTEGER`, `INT8`, `INT64`, `BIGINT`.
+
+  ```sql
+  SELECT 12345::INT;
+  SELECT -9223372036854775807::INT8;
+  ```
+</ParamField>
+
+<ParamField path="INT2" type="smallint">
+  A 16-bit signed integer. Alias: `SMALLINT`. Range: -32768 to +32767.
+
+  ```sql
+  SELECT 100::INT2;
+  ```
+</ParamField>
+
+<ParamField path="INT4" type="integer">
+  A 32-bit signed integer. Range: -2147483648 to +2147483647.
+
+  ```sql
+  SELECT 50000::INT4;
+  ```
+</ParamField>
+
+<ParamField path="INTERVAL" type="duration">
+  A span of time.
+
+  ```sql
+  SELECT INTERVAL '2h30m30s';
+  SELECT INTERVAL '1 day 2 hours';
+  ```
+</ParamField>
+
+<ParamField path="JSONB" type="json">
+  JSON (JavaScript Object Notation) data stored in a binary format.
+
+  ```sql
+  SELECT '{"name": "Lola", "age": 5}'::JSONB;
+  ```
+</ParamField>
+
+<ParamField path="STRING" type="text">
+  A string of Unicode characters. Aliases: `TEXT`, `VARCHAR`, `CHAR`.
+
+  ```sql
+  SELECT 'hello world'::STRING;
+  SELECT STRING 'CockroachDB';
+  ```
+</ParamField>
+
+<ParamField path="TIME" type="time">
+  A time of day in UTC without date information.
+
+  ```sql
+  SELECT TIME '01:23:45.123456';
+  ```
+</ParamField>
+
+<ParamField path="TIMETZ" type="time with timezone">
+  A time of day with a specified time zone offset from UTC.
+
+  ```sql
+  SELECT TIMETZ '01:23:45.123456-5:00';
+  ```
+</ParamField>
+
+<ParamField path="TIMESTAMP" type="timestamp">
+  A date and time pairing in UTC.
+
+  ```sql
+  SELECT TIMESTAMP '2016-01-25 10:10:10';
+  ```
+</ParamField>
+
+<ParamField path="TIMESTAMPTZ" type="timestamp with timezone">
+  A timestamp with a specified time zone offset from UTC.
+
+  ```sql
+  SELECT TIMESTAMPTZ '2016-01-25 10:10:10-05:00';
+  ```
+</ParamField>
+
+<ParamField path="UUID" type="uuid">
+  A 128-bit hexadecimal universally unique identifier.
+
+  ```sql
+  SELECT '7f9c24e8-3b12-4fef-91e0-56a2d5a246ec'::UUID;
+  SELECT gen_random_uuid();
+  ```
+</ParamField>
+
+<ParamField path="VECTOR" type="vector">
+  A fixed-length array of floating-point numbers for vector embeddings.
+
+  ```sql
+  SELECT '[1.0, 0.0, 0.0]'::VECTOR(3);
+  ```
+</ParamField>
+
+## Type Conversions and Casts
+
+You can convert values between different data types using explicit casts:
+
+<Tabs>
+  <Tab title="Type Literal">
+    Convert from a string literal to a specific type:
+
+    ```sql
+    SELECT DATE '2008-12-21';
+    SELECT INT '123';
+    SELECT BOOL 'true';
+    ```
+  </Tab>
+
+  <Tab title=":: Operator">
+    Cast a value to a different type using the `::` operator:
+
+    ```sql
+    SELECT '2008-12-21'::DATE;
+    SELECT 123::STRING;
+    SELECT NOW()::DECIMAL;
+    ```
+  </Tab>
+
+  <Tab title="CAST Function">
+    Use the `CAST()` function for explicit type conversion:
+
+    ```sql
+    SELECT CAST('2008-12-21' AS DATE);
+    SELECT CAST(123 AS STRING);
+    SELECT CAST(VARIANCE(a+2) AS INT);
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  For constant values, use type literals (e.g., `DATE '2016-01-01'`) instead of casts for more predictable results.
+</Note>
+
+## Integer Size Considerations
+
+By default, `INT` is an alias for `INT8`, which creates 64-bit signed integers. This differs from PostgreSQL's default 32-bit `INT`.
+
+### JavaScript Compatibility
+
+JavaScript represents numbers as 64-bit floats with only 53 bits of numeric accuracy. The maximum safe integer in JavaScript (2^53) is much smaller than CockroachDB's `INT` maximum:
+
+```
+9223372036854775807  # CockroachDB INT8 max
+   9007199254740991  # JavaScript safe integer max
+```
+
+If your application uses JavaScript, consider using `INT4` (32-bit) or `STRING` for large integer values.
+
+### Changing Default Integer Size
+
+You can change the default integer size using:
+
+```sql Session Variable
+SET default_int_size = 4;  -- Use 32-bit integers
+```
+
+```sql Cluster Setting
+SET CLUSTER SETTING sql.defaults.default_int_size = 4;
+```
+
+## Implicit Casting to Arrays
+
+CockroachDB supports implicit casting from string literals to arrays of all data types except:
+
+- `BYTES`
+- `ENUM`
+- `JSONB`
+- `SERIAL`
+- Spatial types (`BOX2D`, `GEOGRAPHY`, `GEOMETRY`)
+
+```sql
+SELECT '{1,2,3}'::INT[];
+-- Result: {1,2,3}
+```
+
+## String Length Limits
+
+To limit the length of a string column, use `STRING(n)` where `n` is the maximum number of characters:
+
+```sql
+CREATE TABLE users (
+  username STRING(50),
+  bio TEXT
+);
+```
+
+<Warning>
+  Set length limits on indexed string columns to avoid performance issues. Very large string values in indexes can cause significant performance degradation.
+</Warning>
+
+## Collations
+
+`STRING` values support collations for language-specific sorting:
+
+```sql
+CREATE TABLE products (
+  name STRING COLLATE en PRIMARY KEY
+);
+
+SELECT * FROM products ORDER BY name;
+```
+
+## See Also
+
+- [Type Conversion Functions](/sql/functions#type-conversion-functions)
+- [CREATE TYPE](/sql/statements#create-type)
+- [ALTER TYPE](/sql/statements#alter-type)

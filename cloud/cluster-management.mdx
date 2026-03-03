@@ -1,0 +1,414 @@
+---
+title: Managing CockroachDB Cloud Clusters
+description: Learn how to configure, scale, and manage your CockroachDB Cloud clusters.
+---
+
+This page describes cluster management operations including scaling, upgrading, and configuring your CockroachDB Cloud clusters.
+
+## View Clusters Page
+
+After logging in to the [CockroachDB Cloud Console](https://cockroachlabs.cloud/), the **Clusters** page displays all clusters in your organization.
+
+For each cluster, you can see:
+- Cluster name and status
+- Plan type (Basic, Standard, or Advanced)
+- Cloud provider and regions
+- Version of CockroachDB
+- Creation date
+- Resource usage
+
+Click any cluster name to view its Overview page.
+
+## View Cluster Overview
+
+The **Overview** page provides detailed information about your cluster:
+
+- **Health Status**: Current cluster state and any alerts
+- **Connection Info**: Quick access to connection strings
+- **Cluster Configuration**: Cloud provider, regions, and capacity
+- **Resource Usage**: CPU, storage, and request units
+- **Recent Activity**: Backups, upgrades, and changes
+
+## Manage Cluster Regions
+
+### Add a Region
+
+You can add regions to increase availability and bring data closer to users.
+
+<Steps>
+  <Step title="Navigate to Cluster Settings">
+    1. Go to your cluster's **Overview** page
+    2. In the **Cluster settings** section, click the pencil icon next to **Regions**
+  </Step>
+  
+  <Step title="Select New Region">
+    1. Click **Add Region**
+    2. Select the desired region from the dropdown
+    3. Review the updated cost estimate
+  </Step>
+  
+  <Step title="Apply Changes">
+    1. Click **Next: Capacity**
+    2. Review configuration
+    3. Click **Update cluster**
+  </Step>
+</Steps>
+
+<Warning>
+You cannot remove a region after adding it. Plan your cluster topology carefully.
+</Warning>
+
+## Scale Cluster Capacity
+
+Scaling options vary by cluster plan.
+
+### Scale Standard Cluster Capacity
+
+<Steps>
+  <Step title="Access Capacity Settings">
+    1. Navigate to cluster's **Overview** page
+    2. In the **Capacity** section, click **Update capacity**
+  </Step>
+  
+  <Step title="Adjust Capacity">
+    Use the slider or enter a value to set vCPUs:
+    - Minimum: 4 vCPUs
+    - Recommended: 40% above peak workload
+    - You can increase anytime
+    - You can decrease 3 times per 7 days
+  </Step>
+  
+  <Step title="Apply Changes">
+    1. Review the new estimated cost
+    2. Click **Update cluster**
+    3. Changes take effect immediately
+  </Step>
+</Steps>
+
+### Scale Advanced Cluster
+
+For Advanced clusters, you can scale nodes and storage independently.
+
+**Add Nodes:**
+
+<Steps>
+  <Step title="Navigate to Nodes">
+    Go to cluster's **Overview** page and find the **Nodes** section
+  </Step>
+  
+  <Step title="Add Nodes">
+    1. Click **Add nodes**
+    2. Select region(s) to add nodes
+    3. Specify number of nodes per region
+    4. Review cost impact
+  </Step>
+  
+  <Step title="Confirm">
+    Click **Add nodes** to apply changes
+  </Step>
+</Steps>
+
+**Adjust Storage:**
+
+<Steps>
+  <Step title="Access Storage Settings">
+    Click the pencil icon next to **Storage** in the cluster settings
+  </Step>
+  
+  <Step title="Increase Storage">
+    1. Enter new storage amount (per node)
+    2. You can only increase, not decrease
+    3. Review cost estimate
+  </Step>
+  
+  <Step title="Apply">
+    Click **Update cluster** to apply changes
+  </Step>
+</Steps>
+
+<Info>
+**Basic clusters** scale automatically based on usage. No manual scaling needed.
+</Info>
+
+## Manage Cluster Upgrades
+
+CockroachDB Cloud regularly releases new versions with improvements and fixes.
+
+### Automatic Major Version Upgrades
+
+By default, clusters automatically upgrade to new major versions.
+
+**How it works:**
+- Clusters upgrade to early production patches (e.g., `vXX.Y.1`)
+- You receive advance notification via email and Console banner
+- Upgrades are finalized immediately (cannot be rolled back)
+- Cluster remains operational during upgrade
+
+### Manual Major Version Upgrades
+
+You can opt for manual control over major version upgrades.
+
+<Steps>
+  <Step title="Enable Manual Upgrades">
+    1. Navigate to cluster's **Overview** page
+    2. Click **Actions** > **Manual upgrade settings**
+    3. Toggle **Manual upgrades** to **On**
+    4. Click **Apply**
+  </Step>
+  
+  <Step title="Upgrade When Ready">
+    When a new version is available:
+    1. Go to cluster **Overview** page
+    2. Click **Upgrade** button
+    3. Select target version
+    4. Review upgrade notes
+    5. Click **Start upgrade**
+  </Step>
+  
+  <Step title="Monitor Upgrade">
+    Track upgrade progress on the Overview page. You can roll back within 72 hours if needed.
+  </Step>
+</Steps>
+
+<Warning>
+**Support Policy**: Clusters must be upgraded within one year of their current version's release. Clusters running unsupported versions will be upgraded automatically.
+</Warning>
+
+### Patch Version Upgrades
+
+Patch versions (e.g., `v23.1.12` to `v23.1.13`) are applied automatically:
+- No action required
+- Applied during maintenance windows
+- Typically no downtime
+- Notifications sent before and after
+
+## Configure Maintenance Windows
+
+Control when cluster maintenance occurs.
+
+<Steps>
+  <Step title="Access Maintenance Settings">
+    1. Go to cluster's **Overview** page
+    2. Click **Actions** > **Maintenance window**
+  </Step>
+  
+  <Step title="Set Window">
+    1. Select day of week
+    2. Select start time (in your timezone)
+    3. Maintenance window is 6 hours long
+  </Step>
+  
+  <Step title="Save">
+    Click **Save** to apply maintenance window
+  </Step>
+</Steps>
+
+## Change Cluster Plan
+
+You can migrate between plans under certain conditions.
+
+### Upgrade from Basic to Standard
+
+<Steps>
+  <Step title="Initiate Migration">
+    1. Navigate to cluster's **Overview** page
+    2. Click **Actions** > **Change plan**
+    3. Select **Standard**
+  </Step>
+  
+  <Step title="Configure Capacity">
+    1. Set provisioned vCPU capacity
+    2. Review cost estimate
+    3. Click **Next**
+  </Step>
+  
+  <Step title="Complete Migration">
+    1. Review migration details
+    2. Click **Change plan**
+    3. Migration completes in a few minutes
+  </Step>
+</Steps>
+
+### Upgrade from Standard/Basic to Advanced
+
+<Info>
+Migrating to Advanced requires creating a new cluster and migrating data. Contact Support for assistance.
+</Info>
+
+## Enable Deletion Protection
+
+Prevent accidental cluster deletion.
+
+<Steps>
+  <Step title="Access Settings">
+    Navigate to cluster's **Overview** page
+  </Step>
+  
+  <Step title="Enable Protection">
+    1. Find **Deletion protection** setting
+    2. Click the pencil icon
+    3. Toggle to **Enabled**
+    4. Click **Save**
+  </Step>
+</Steps>
+
+Clusters with deletion protection enabled cannot be deleted until protection is disabled.
+
+## Delete a Cluster
+
+<Warning>
+**Warning**: Deleting a cluster permanently removes all data. Deleted clusters cannot be restored.
+</Warning>
+
+<Steps>
+  <Step title="Disable Deletion Protection">
+    If enabled, disable deletion protection first.
+  </Step>
+  
+  <Step title="Initiate Deletion">
+    1. Navigate to cluster's **Overview** page
+    2. Click **Actions** > **Delete cluster**
+  </Step>
+  
+  <Step title="Confirm Deletion">
+    1. Enter the cluster name to confirm
+    2. Click **Delete**
+    3. Cluster and all data are permanently removed
+  </Step>
+</Steps>
+
+<Info>
+For Standard clusters, you're only billed while the cluster is running. Delete clusters when not in use to avoid charges.
+</Info>
+
+## Organize with Labels
+
+Use labels to organize and track clusters.
+
+<Steps>
+  <Step title="Add Labels">
+    1. Go to cluster's **Overview** page
+    2. Click **Edit labels** in the cluster settings
+  </Step>
+  
+  <Step title="Create Labels">
+    Add key-value pairs:
+    - `environment: production`
+    - `team: engineering`
+    - `cost-center: 12345`
+  </Step>
+  
+  <Step title="Save">
+    Click **Save** to apply labels
+  </Step>
+</Steps>
+
+Labels appear in:
+- Cluster lists
+- Billing reports
+- API responses
+- Audit logs
+
+## Use Folders
+
+Organize clusters into folders (Preview feature).
+
+<Steps>
+  <Step title="Create Folder">
+    1. On **Clusters** page, click **New Folder**
+    2. Name the folder
+    3. Click **Create**
+  </Step>
+  
+  <Step title="Move Cluster">
+    1. Select cluster from list
+    2. Click **Actions** > **Move to folder**
+    3. Select destination folder
+    4. Click **Move**
+  </Step>
+</Steps>
+
+**Benefits**:
+- Organized cluster management
+- Grouped billing
+- Inherited permissions
+- Hierarchical structure
+
+## Backup and Restore
+
+All CockroachDB Cloud clusters have automatic managed backups.
+
+- **Basic**: Daily backups, 30-day retention
+- **Standard**: Configurable frequency and retention
+- **Advanced**: Configurable frequency, retention, and self-managed options
+
+To restore from a backup:
+
+<Steps>
+  <Step title="Navigate to Backups">
+    Click **Backup and Restore** in the cluster navigation
+  </Step>
+  
+  <Step title="Select Backup">
+    Choose the backup to restore from
+  </Step>
+  
+  <Step title="Restore">
+    Click **Restore** and confirm the operation
+  </Step>
+</Steps>
+
+For more details, see [Backup and Restore](/cloud/backup-restore).
+
+## Monitor Cluster Health
+
+Monitor your cluster's health and performance:
+
+- **Overview Page**: Quick health status
+- **Metrics**: Detailed performance charts
+- **SQL Activity**: Query performance and insights
+- **Alerts**: Automatic notifications for issues
+
+## Troubleshooting
+
+### Cluster Not Responding
+
+1. Check cluster status on Overview page
+2. Verify network connectivity
+3. Review recent changes or upgrades
+4. Check IP allowlist configuration
+5. Contact Support if issue persists
+
+### Performance Issues
+
+1. Review Metrics page for resource utilization
+2. Check for slow queries in SQL Activity
+3. Consider scaling capacity
+4. Review Insights for optimization recommendations
+
+### Upgrade Failures
+
+1. Check upgrade status on Overview page
+2. Review error messages
+3. Roll back if within 72-hour window (manual upgrades)
+4. Contact Support for assistance
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Scaling Guide" icon="arrow-up-right-dots" href="/cloud/scaling">
+    Learn how to scale your cluster
+  </Card>
+  
+  <Card title="Monitoring" icon="chart-line" href="/cloud/monitoring">
+    Set up cluster monitoring
+  </Card>
+  
+  <Card title="Backup & Restore" icon="database" href="/cloud/backup-restore">
+    Configure backups
+  </Card>
+  
+  <Card title="Performance" icon="gauge-high" href="https://www.cockroachlabs.com/docs/stable/performance-best-practices-overview">
+    Optimize performance
+  </Card>
+</CardGroup>

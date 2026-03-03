@@ -1,0 +1,154 @@
+---
+title: Storage layer
+description: The storage layer reads and writes data to disk using the Pebble storage engine.
+---
+
+The storage layer of CockroachDB's architecture reads and writes data to disk.
+
+<Info>
+If you haven't already, we recommend reading the [architecture overview](/architecture/overview).
+</Info>
+
+## Overview
+
+Each CockroachDB node contains at least one **store**, specified when the node starts, which is where the `cockroach` process reads and writes its data on disk.
+
+This data is stored as key-value pairs on disk using the storage engine, which is treated primarily as a black-box API.
+
+CockroachDB uses the Pebble storage engine. Pebble is inspired by RocksDB, but differs in that it:
+
+- Is written in Go and implements a subset of RocksDB's large feature set
+- Contains optimizations that benefit CockroachDB
+
+Internally, each store contains two instances of the storage engine:
+
+- One for storing temporary distributed SQL data
+- One for all other data on the node
+
+In addition, there is also a block cache shared amongst all of the stores in a node. These stores in turn have a collection of range replicas. More than one replica for a range will never be placed on the same store or even the same node.
+
+## Pebble storage engine
+
+CockroachDB uses Pebble—an embedded key-value store inspired by RocksDB, and developed by Cockroach Labs—to read and write data to disk.
+
+Pebble integrates well with CockroachDB for a number of reasons:
+
+- It is a key-value store, which makes mapping to the key-value layer simple
+- It provides atomic write batches and snapshots, which give a subset of transactions
+- It is developed by Cockroach Labs engineers
+- It contains optimizations that are not in RocksDB, inspired by how CockroachDB uses the storage engine
+
+Efficient storage for the keys is guaranteed by the underlying Pebble engine by means of prefix compression.
+
+Pebble uses a Log-structured Merge-tree (LSM) to manage data storage.
+
+## Log-structured merge-trees
+
+Pebble uses a Log-structured Merge-tree (LSM) to manage data storage. The LSM is a hierarchical tree. At each level of the tree, there are files on disk that store the data referenced at that level. The files are known as **sorted string table** files (SST or SST file).
+
+### SSTs
+
+SSTs are an on-disk representation of sorted lists of key-value pairs. SST files are immutable—they are never modified, even during the compaction process.
+
+### LSM levels
+
+The levels of the LSM are organized from L0 to L6. L0 is the top-most level. L6 is the bottom-most level. New data is added into L0 and then merged down into lower levels over time.
+
+Each level is associated with a set of SSTs. Each SST is immutable and has a unique, monotonically increasing number.
+
+The SSTs within each level are guaranteed to be non-overlapping: for example, if one SST contains the keys `[A-F)` (non-inclusive), the next will contain keys `[F-R)`, and so on. **The L0 level is a special case**: it is the only level of the tree that is allowed to contain SSTs with overlapping keys. This exception to the rule is necessary to:
+
+- Allow LSM-based storage engines like Pebble to support ingesting large amounts of data
+- Allow for easier and more efficient flushes of memtables
+
+### Write amplification
+
+Write amplification measures the volume of data written to disk relative to the volume of data logically committed to the storage engine. When values are committed, CockroachDB writes them to the write-ahead log (WAL) and then to SSTables during flushes. Compactions rewrite those SSTables multiple times over the value's lifetime. Most write amplification, and write bandwidth more broadly, originates from compactions.
+
+This tradeoff between compactions and write amplification is necessary, because if the storage engine performs too few compactions, the size of L0 will get too large and an inverted LSM will result, which also has ill effects. In contrast, writes to the WAL are a small fraction of a store's overall write bandwidth and IOPS.
+
+### Read amplification
+
+Read amplification measures the number of SSTable files consulted to satisfy a logical read. High read amplification occurs when value lookups must search multiple LSM levels or SST files, such as in an inverted LSM state. Keeping read and write amplification in balance is critical for optimal storage engine performance.
+
+Read amplification is high when the LSM is inverted. In the inverted LSM state, reads need to start in higher levels and "look down" through a lot of SSTs to read a key's correct (freshest) value.
+
+<Note>
+A certain amount of read amplification is expected in a normally functioning CockroachDB cluster. For example, a read amplification factor less than 10 is considered healthy.
+</Note>
+
+### Compaction
+
+The process of merging SSTs and moving them from L0 down to L6 in the LSM is called **compaction**. The storage engine works to compact data as quickly as possible. As a result of this process, lower levels of the LSM should contain larger SSTs that contain less recently updated keys, while higher levels of the LSM should contain smaller SSTs that contain more recently updated keys.
+
+The compaction process is necessary in order for an LSM to work efficiently. From L0 down to L6, each level of the tree should have about 1/10 as much data as the next level below. Ideally as much of the data as possible will be stored in larger SSTs referenced at lower levels of the LSM. If the compaction process falls behind, it can result in an inverted LSM.
+
+SST files are never modified during the compaction process. Instead, new SSTs are written, and old SSTs are deleted. This design takes advantage of the fact that sequential disk access is much faster than random disk access.
+
+The process of compaction works like this: if two SST files need to be merged, their contents (key-value pairs) are read into memory. From there, the contents are sorted and merged together in memory, and a new file is opened and written to disk with the new, larger sorted list of key-value pairs. Finally, the old files are deleted.
+
+### Inverted LSMs
+
+If the compaction process falls behind the amount of data being added, and there is more data stored at a higher level of the tree than the level below, the LSM shape can become inverted.
+
+During normal operation, the LSM should look like this: ◣. An inverted LSM looks like this: ◤.
+
+An inverted LSM will have degraded read performance. Inverted LSMs also have excessive compaction debt. In this state, the storage engine has a large backlog of compactions to do to return the inverted LSM to a normal, non-inverted state.
+
+### Memtable and write-ahead log
+
+To facilitate managing the LSM tree structure, the storage engine maintains an in-memory representation of the LSM known as the **memtable**. Periodically, data from the memtable is flushed to SST files on disk.
+
+Another file on disk called the **write-ahead log** (WAL) is associated with each memtable to ensure durability in case of power loss or other failures. The WAL is where the freshest updates issued to the storage engine by the replication layer are stored on disk. Each WAL has a 1 to 1 correspondence with a memtable. They are kept in sync, and updates from the WAL and memtable are written to SSTs periodically as part of the storage engine's normal operation.
+
+New values are written to the WAL at the same time as they are written to the memtable. From the memtable they are eventually written to SST files on disk for longer-term storage.
+
+### LSM design tradeoffs
+
+The LSM tree design optimizes write performance over read performance. By keeping sorted key-value data in SSTs, it avoids random disk seeks when writing. It tries to mitigate the cost of reads (random seeks) by doing reads from as low in the LSM tree as possible, from fewer, larger files. This is why the storage engine performs compactions. The storage engine also uses a block cache to speed up reads even further whenever possible.
+
+The tradeoffs in the LSM design are meant to take advantage of the way modern disks work, since even though they provide faster reads of random locations on disk due to caches, they still perform relatively poorly on writes to random locations.
+
+## MVCC
+
+CockroachDB relies heavily on multi-version concurrency control (MVCC) to process concurrent requests and guarantee consistency. Much of this work is done by using hybrid logical clock (HLC) timestamps to differentiate between versions of data, track commit timestamps, and identify a value's garbage collection expiration. All of this MVCC data is then stored in Pebble.
+
+Despite being implemented in the storage layer, MVCC values are widely used to enforce consistency in the transaction layer. For example, CockroachDB maintains a timestamp cache, which stores the timestamp of the last time that the key was read. If a write operation occurs at a lower timestamp than the largest value in the read timestamp cache, it signifies that there is a potential anomaly. Under the default `SERIALIZABLE` isolation level, the transaction must be restarted at a later timestamp.
+
+### Time-travel
+
+As described in the SQL:2011 standard, CockroachDB supports time travel queries (enabled by MVCC).
+
+To do this, all of the schema information also has an MVCC-like model behind it. This lets you perform `SELECT...AS OF SYSTEM TIME`, and CockroachDB uses the schema information as of that time to formulate the queries.
+
+Using these tools, you can get consistent data from your database as far back as your garbage collection period.
+
+## Garbage collection
+
+CockroachDB regularly garbage collects MVCC values to reduce the size of data stored on disk. To do this, CockroachDB compacts old MVCC values when there is a newer MVCC value with a timestamp that's older than the garbage collection period. The garbage collection period can be set at the cluster, database, or table level by configuring the `gc.ttlseconds` replication zone variable.
+
+### Protected timestamps
+
+Garbage collection can only run on MVCC values which are not covered by a **protected timestamp**. The protected timestamp subsystem exists to ensure the safety of operations that rely on historical data, such as:
+
+- Backups
+- Changefeeds
+
+Protected timestamps ensure the safety of historical data while also enabling shorter GC TTLs. A shorter GC TTL means that fewer previous MVCC values are kept around. This can help lower query execution costs for workloads which update rows frequently throughout the day, since the SQL layer has to scan over previous MVCC values to find the current value of a row.
+
+#### How protected timestamps work
+
+Protected timestamps work by creating **protection records**, which are stored in an internal system table. When a long-running job such as a backup wants to protect data at a certain timestamp from being garbage collected, it creates a protection record associated with that data and timestamp.
+
+Upon successful creation of a protection record, the MVCC values for the specified data at timestamps less than or equal to the protected timestamp will not be garbage collected. When the job that created the protection record finishes its work, it removes the record, allowing the garbage collector to run on the formerly protected values.
+
+## Interactions with other layers
+
+In relationship to other layers in CockroachDB, the storage layer:
+
+- Commits writes from the Raft log to disk
+- Returns requested data (reads) to the replication layer
+
+## What's next?
+
+Now that you've learned about CockroachDB's architecture, start building applications with CockroachDB or explore production deployment best practices.

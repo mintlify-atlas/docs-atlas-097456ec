@@ -1,0 +1,692 @@
+---
+title: Troubleshooting Guide
+description: Diagnose and resolve common issues with CockroachDB clusters
+---
+
+This guide helps you troubleshoot common issues when running CockroachDB clusters.
+
+## Initial Troubleshooting Steps
+
+When you experience issues, start with these steps:
+
+<Steps>
+
+<Step title="Check logs for errors">
+Logs are generated on a per-node basis:
+
+<CodeBlock>
+```bash
+# View recent logs
+tail -f /var/log/cockroach/cockroach.log
+
+# Search for errors
+grep ERROR /var/log/cockroach/cockroach.log
+
+# Collect logs from all nodes
+cockroach debug zip debug.zip --host=node1:26257
+```
+</CodeBlock>
+
+<Info>
+The `debug zip` command collects logs, metrics, and diagnostics from all cluster nodes into a single archive for troubleshooting.
+</Info>
+</Step>
+
+<Step title="Check node and cluster status">
+<CodeBlock>
+```bash
+# Check node status
+cockroach node status --host=node1:26257
+
+# Check cluster status with details
+cockroach node status --all --host=node1:26257
+
+# Check node decommissioning status
+cockroach node status --decommission --host=node1:26257
+```
+</CodeBlock>
+</Step>
+
+<Step title="Review DB Console">
+Access DB Console at `http://<node-host>:8080` to check:
+
+- Node health on Cluster Overview page
+- Under-replicated or unavailable ranges
+- CPU, memory, and disk usage
+- Recent SQL activity and slow queries
+</Step>
+
+</Steps>
+
+## Cluster Setup Issues
+
+### Cannot Start Single-Node Cluster
+
+<Accordion title="Existing storage directory conflict">
+**Problem:** Node won't start due to existing cluster data.
+
+<CodeBlock>
+```bash
+ERROR: node belongs to cluster {cluster-id} but is attempting 
+to connect to a gossip network for cluster {different-cluster-id}
+```
+</CodeBlock>
+
+**Solution:**
+
+<CodeBlock>
+```bash
+# Option 1: Use different directory
+cockroach start-single-node \
+  --store=/new/data/path \
+  --insecure
+
+# Option 2: Remove existing directory
+rm -rf cockroach-data/
+cockroach start-single-node --insecure
+```
+</CodeBlock>
+</Accordion>
+
+<Accordion title="Ports already in use">
+**Problem:** Default ports 26257 or 8080 are occupied.
+
+<CodeBlock>
+```bash
+ERROR: listen tcp 127.0.0.1:26257: bind: address already in use
+```
+</CodeBlock>
+
+**Solution:**
+
+<CodeBlock>
+```bash
+# Use different ports
+cockroach start-single-node \
+  --listen-addr=localhost:26258 \
+  --http-addr=localhost:8081 \
+  --insecure
+
+# Or stop conflicting services
+lsof -i :26257  # Find process using port
+kill <pid>      # Stop the process
+```
+</CodeBlock>
+</Accordion>
+
+<Accordion title="Incompatible CPU architecture">
+**Problem:** Exit status 132 (SIGILL) indicates unsupported CPU instructions.
+
+**Solution:**
+- Use official CockroachDB release builds (support all x86-64 CPUs)
+- Verify binary is correct for your architecture
+- Check if running very old CPU without required instruction sets
+</Accordion>
+
+### Multi-Node Cluster Issues
+
+<Accordion title="Cannot join node to existing cluster">
+**Problem:** Node won't join cluster with `--join` flag.
+
+<CodeBlock>
+```bash
+W180817 17:01:56.506968 886 vendor/google.golang.org/grpc/clientconn.go:942 
+Failed to dial localhost:26257: grpc: the connection is closing; please retry.
+```
+</CodeBlock>
+
+**Diagnosis:**
+
+<CodeBlock>
+```bash
+# Test connectivity
+ping node1.example.com
+telnet node1.example.com 26257
+
+# Check if node is running
+ps aux | grep cockroach
+
+# Verify join address
+cockroach node status --host=node1:26257
+```
+</CodeBlock>
+
+**Solutions:**
+
+<CodeBlock>
+```bash
+# Use correct join address
+cockroach start \
+  --certs-dir=certs \
+  --advertise-addr=node2.example.com:26257 \
+  --join=node1.example.com:26257 \
+  --store=/data/cockroach
+
+# Verify network connectivity
+# Check firewall rules allow port 26257
+# Ensure DNS resolution works for node hostnames
+```
+</CodeBlock>
+</Accordion>
+
+<Accordion title="Performance degraded when adding nodes">
+**Problem:** Cluster slows down during node additions.
+
+**Cause:** `kv.snapshot_rebalance.max_rate` set too high causes write overload.
+
+<CodeBlock>
+```sql
+-- Check current setting
+SHOW CLUSTER SETTING kv.snapshot_rebalance.max_rate;
+
+-- Check LSM health
+SELECT store_id, l0_sublevels, l0_num_files
+FROM crdb_internal.kv_store_status;
+```
+</CodeBlock>
+
+**Solution:**
+
+<CodeBlock>
+```sql
+-- Reduce rebalance rate
+SET CLUSTER SETTING kv.snapshot_rebalance.max_rate = '32 MiB';
+
+-- Wait for compaction to catch up
+-- Monitor L0 sublevels until < 20
+
+-- Reset to default after rebalancing completes
+RESET CLUSTER SETTING kv.snapshot_rebalance.max_rate;
+```
+</CodeBlock>
+
+<Warning>
+Do not increase `kv.snapshot_rebalance.max_rate` more than 2x default without explicit guidance from Cockroach Labs.
+</Warning>
+</Accordion>
+
+## Connection Issues
+
+### Cannot Connect with SQL Client
+
+<Accordion title="Connection refused error">
+<CodeBlock>
+```bash
+ERROR: cannot dial server: dial tcp 127.0.0.1:26257: connect: connection refused
+```
+</CodeBlock>
+
+**Diagnosis:**
+
+<CodeBlock>
+```bash
+# Check if node is running
+ps aux | grep cockroach
+
+# Test network connectivity
+telnet localhost 26257
+
+# Check listening ports
+netstat -an | grep 26257
+```
+</CodeBlock>
+
+**Solutions:**
+
+- Ensure node is running: `cockroach node status`
+- Verify port number matches node configuration
+- Include flags used during node start (e.g., `--port`, `--host`)
+- Check firewall rules allow connection
+</Accordion>
+
+<Accordion title="SSL/TLS connection errors">
+<CodeBlock>
+```bash
+ERROR: x509: certificate signed by unknown authority
+```
+</CodeBlock>
+
+**Solution:**
+
+<CodeBlock>
+```bash
+# For secure cluster, provide certificates
+cockroach sql \
+  --certs-dir=certs \
+  --host=node1.example.com:26257
+
+# Or specify in connection string
+psql "postgresql://user@node1:26257/db?sslmode=require&sslrootcert=certs/ca.crt&sslcert=certs/client.user.crt&sslkey=certs/client.user.key"
+```
+</CodeBlock>
+</Accordion>
+
+## Performance Issues
+
+### High Query Latency
+
+<Accordion title="Diagnose slow queries">
+<CodeBlock>
+```sql
+-- Find slow queries
+SELECT 
+  query,
+  count,
+  avg_latency,
+  p99_latency,
+  rows_avg
+FROM crdb_internal.statement_statistics
+WHERE avg_latency > INTERVAL '100ms'
+ORDER BY avg_latency DESC
+LIMIT 20;
+
+-- Check currently running queries
+SELECT 
+  query_id,
+  node_id,
+  user_name,
+  start,
+  query,
+  phase
+FROM crdb_internal.cluster_queries
+WHERE start < (now() - INTERVAL '5s')
+ORDER BY start;
+```
+</CodeBlock>
+
+**Common causes:**
+
+1. **Missing indexes**: Use `EXPLAIN` to identify full table scans
+2. **High CPU usage**: Check CPU metrics, reduce concurrency
+3. **Disk I/O bottleneck**: Monitor disk IOPS and latency
+4. **Transaction contention**: Check `crdb_internal.cluster_contention_events`
+</Accordion>
+
+<Accordion title="Identify and resolve contention">
+<CodeBlock>
+```sql
+-- View contention events
+SELECT 
+  waiting_txn_id,
+  blocking_txn_id,
+  contention_duration,
+  table_name,
+  index_name,
+  key
+FROM crdb_internal.cluster_contention_events
+ORDER BY contention_duration DESC
+LIMIT 20;
+
+-- Check locks
+SHOW CLUSTER LOCKS;
+```
+</CodeBlock>
+
+**Solutions:**
+
+- Reduce transaction duration (keep transactions short)
+- Avoid hot keys (use UUID or composite keys)
+- Use `SELECT FOR UPDATE` to explicitly lock
+- Consider optimistic locking patterns
+</Accordion>
+
+### High CPU Usage
+
+<Accordion title="Diagnose CPU issues">
+<CodeBlock>
+```sql
+-- Check CPU usage per node
+SELECT 
+  node_id,
+  user_cpu_percent,
+  sys_cpu_percent
+FROM crdb_internal.kv_node_status;
+
+-- Find CPU-intensive queries
+SELECT 
+  query,
+  count,
+  sum_latency,
+  avg_latency
+FROM crdb_internal.statement_statistics
+ORDER BY sum_latency DESC
+LIMIT 20;
+```
+</CodeBlock>
+
+**Common causes:**
+
+1. **Excessive concurrency**: Too many active queries
+2. **Inefficient queries**: Full table scans, missing indexes
+3. **Compaction falling behind**: Check LSM health
+4. **Under-provisioned cluster**: Need more CPU cores
+
+**Solutions:**
+
+- Limit connection pool size to ~4x vCPU count
+- Optimize slow queries (add indexes, rewrite)
+- Scale horizontally (add more nodes)
+- Use connection pooling (PgBouncer)
+</Accordion>
+
+### Memory Issues
+
+<Accordion title="Out of memory (OOM) crashes">
+**Symptoms:** Nodes restart unexpectedly.
+
+**Diagnosis:**
+
+<CodeBlock>
+```bash
+# Check system logs for OOM
+sudo dmesg | grep -i "out of memory"
+sudo dmesg | grep -i cockroach
+
+# Check Kubernetes pod restarts
+kubectl get pods | grep cockroach
+
+# Review active query dumps
+ls -lh <logging-dir>/heap_profiler/activequeryprof.*.csv
+```
+</CodeBlock>
+
+**Solutions:**
+
+<CodeBlock>
+```bash
+# Increase node memory
+# or reduce SQL memory allocation
+cockroach start \
+  --certs-dir=certs \
+  --max-sql-memory=6GiB \
+  --cache=8GiB \
+  ...
+```
+</CodeBlock>
+
+<CodeBlock>
+```sql
+-- Find memory-intensive queries
+SELECT 
+  query,
+  count,
+  max_mem_usage
+FROM crdb_internal.statement_statistics
+WHERE max_mem_usage > 1073741824  -- 1GB
+ORDER BY max_mem_usage DESC;
+
+-- Optimize or limit these queries
+```
+</CodeBlock>
+
+<Tip>
+- Disable swap: `sudo swapoff -a`
+- Set `--max-sql-memory` to 25-30% of total RAM
+- Set `--cache` to 25% of total RAM
+</Tip>
+</Accordion>
+
+### Storage Issues
+
+<Accordion title="Low disk space">
+**Problem:** Nodes shut down when disk space < 10%.
+
+<CodeBlock>
+```sql
+-- Check disk capacity
+SELECT 
+  store_id,
+  node_id,
+  capacity,
+  available,
+  used,
+  (available::FLOAT / capacity::FLOAT * 100)::INT AS percent_available
+FROM crdb_internal.kv_store_status
+ORDER BY percent_available;
+```
+</CodeBlock>
+
+**Solutions:**
+
+<CodeBlock>
+```sql
+-- Reduce GC TTL to reclaim space faster
+ALTER RANGE default CONFIGURE ZONE USING gc.ttlseconds = 3600;  -- 1 hour
+
+-- Drop unused databases/tables
+DROP DATABASE old_data CASCADE;
+
+-- Expire old backups
+SHOW BACKUPS IN 'external://backup-location';
+-- Delete old backup directories
+```
+</CodeBlock>
+
+<CodeBlock>
+```bash
+# Add more disk space (cloud volumes)
+# AWS example
+aws ec2 modify-volume --volume-id vol-xxx --size 200
+
+# Resize filesystem after volume expansion
+sudo resize2fs /dev/nvme1n1
+```
+</CodeBlock>
+
+<Warning>
+Nodes automatically shut down when disk space falls below 10% to prevent data corruption. Monitor disk usage and set alerts at 15-20% free space.
+</Warning>
+</Accordion>
+
+<Accordion title="Unhealthy LSM (inverted LSM)">
+**Problem:** High L0 sublevels indicate compaction falling behind.
+
+<CodeBlock>
+```sql
+-- Check LSM health
+SELECT 
+  store_id,
+  l0_sublevels,
+  l0_num_files,
+  storage_read_amplification
+FROM crdb_internal.kv_store_status
+WHERE l0_sublevels > 20;
+```
+</CodeBlock>
+
+**Solutions:**
+
+<CodeBlock>
+```sql
+-- Reduce write load temporarily
+-- Wait for compaction to catch up
+
+-- Increase compaction concurrency (if CPU available)
+SET CLUSTER SETTING rocksdb.min_wal_sync_interval = '500µs';
+
+-- After recovery, reset snapshot rate
+RESET CLUSTER SETTING kv.snapshot_rebalance.max_rate;
+```
+</CodeBlock>
+
+**Prevention:**
+- Ensure adequate CPU resources
+- Don't set snapshot rebalance rate too high
+- Monitor L0 sublevels continuously
+- Scale cluster before reaching capacity limits
+</Accordion>
+
+## Replication Issues
+
+<Accordion title="Under-replicated ranges">
+**Problem:** Some ranges have fewer replicas than configured.
+
+<CodeBlock>
+```sql
+-- Check under-replicated ranges
+SHOW RANGES FROM DATABASE mydb WITH DETAILS;
+
+-- Count under-replicated ranges
+SELECT COUNT(*) 
+FROM crdb_internal.ranges 
+WHERE array_length(replicas, 1) < 3;  -- assuming 3 replicas
+
+-- View replication status
+SHOW CLUSTER SETTING kv.replication.reports.interval;
+```
+</CodeBlock>
+
+**Common causes:**
+
+1. Node failure or network partition
+2. Insufficient nodes for replication factor
+3. Constraint violations (locality constraints)
+4. Slow replication due to network or disk issues
+
+**Solutions:**
+
+- Ensure all nodes are healthy and reachable
+- Verify cluster has enough nodes for replication factor
+- Check and fix zone configuration constraints
+- Monitor replication queue length and duration
+</Accordion>
+
+<Accordion title="Unavailable ranges">
+**Problem:** Some ranges cannot serve requests (critical issue).
+
+<CodeBlock>
+```bash
+# Check critical nodes status
+curl -X POST http://localhost:8080/_status/critical_nodes
+
+# Look for unavailable ranges in output
+```
+</CodeBlock>
+
+**Immediate actions:**
+
+1. Check if majority of replicas are reachable
+2. Verify network connectivity between nodes
+3. Check node health (CPU, memory, disk)
+4. Review recent changes (deployments, config changes)
+
+**Recovery:**
+
+- If nodes are down, restore them immediately
+- If data is lost, may require restore from backup
+- Contact Cockroach Labs support for guidance
+
+<Warning>
+Unavailable ranges indicate data that cannot be read or written. This is a critical situation requiring immediate attention.
+</Warning>
+</Accordion>
+
+## Common Error Messages
+
+<Accordion title="Transaction retry errors (40001)">
+<CodeBlock>
+```
+ERROR: restart transaction: TransactionRetryWithProtoRefreshError: 
+transaction deadline exceeded
+```
+</CodeBlock>
+
+**Causes:**
+- Transaction took too long (exceeded deadline)
+- Contention with other transactions
+- Node failures during transaction
+
+**Solutions:**
+
+- Implement retry logic in application
+- Reduce transaction duration
+- Use `AS OF SYSTEM TIME` for read-only queries
+- Investigate and resolve contention
+
+<CodeBlock>
+```python
+# Example retry logic (Python)
+from psycopg2.extensions import TransactionRollbackError
+
+max_retries = 3
+for attempt in range(max_retries):
+    try:
+        with conn.cursor() as cur:
+            cur.execute("BEGIN")
+            # ... transaction statements ...
+            cur.execute("COMMIT")
+        break
+    except TransactionRollbackError as e:
+        if attempt == max_retries - 1:
+            raise
+        time.sleep(0.1 * (2 ** attempt))  # Exponential backoff
+```
+</CodeBlock>
+</Accordion>
+
+<Accordion title="Certificate errors">
+<CodeBlock>
+```
+ERROR: x509: certificate has expired or is not yet valid
+```
+</CodeBlock>
+
+**Solution:**
+
+<CodeBlock>
+```bash
+# Check certificate expiration
+cockroach cert list --certs-dir=certs
+
+# Create new certificates before expiration
+cockroach cert create-node \
+  node1.example.com \
+  --certs-dir=certs \
+  --ca-key=my-safe-directory/ca.key
+
+# Replace certificates on nodes (rolling restart)
+```
+</CodeBlock>
+
+<Tip>
+Monitor certificate expiration dates and set up alerts 30 days before expiry.
+</Tip>
+</Accordion>
+
+## Getting Help
+
+If you cannot resolve the issue:
+
+<Steps>
+
+<Step title="Collect diagnostic information">
+<CodeBlock>
+```bash
+# Create debug bundle
+cockroach debug zip debug.zip \
+  --host=node1:26257 \
+  --certs-dir=certs
+
+# Include time range if issue is historical
+cockroach debug zip debug.zip \
+  --host=node1:26257 \
+  --from='2024-03-01 10:00:00' \
+  --to='2024-03-01 11:00:00'
+```
+</CodeBlock>
+</Step>
+
+<Step title="Review documentation">
+- [Troubleshooting Overview](https://www.cockroachlabs.com/docs/stable/troubleshooting-overview)
+- [Common Errors](https://www.cockroachlabs.com/docs/stable/common-errors)
+- [Transaction Retry Errors](https://www.cockroachlabs.com/docs/stable/transaction-retry-error-reference)
+</Step>
+
+<Step title="Contact support">
+- **Community**: [CockroachDB Forum](https://forum.cockroachlabs.com/)
+- **Slack**: [CockroachDB Community Slack](https://cockroachdb.slack.com)
+- **Enterprise Support**: File ticket through support portal
+- **GitHub**: [File an issue](https://github.com/cockroachdb/cockroach/issues/new)
+</Step>
+
+</Steps>

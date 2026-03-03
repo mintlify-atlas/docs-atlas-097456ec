@@ -1,0 +1,524 @@
+---
+title: Client Drivers
+description: Install and configure client drivers for connecting to CockroachDB from your application
+---
+
+CockroachDB supports both native drivers and the PostgreSQL wire protocol. Most PostgreSQL client drivers and ORM frameworks work with CockroachDB.
+
+<Note>
+Applications may encounter incompatibilities when using advanced or obscure features of a driver or ORM with **partial** support. If you encounter problems, please [open an issue](https://github.com/cockroachdb/cockroach/issues/new) with details.
+</Note>
+
+## JavaScript/TypeScript
+
+### Drivers
+
+#### pg (node-postgres)
+
+**Support level:** Full
+
+The Node.js pg driver provides a simple interface for PostgreSQL-compatible databases.
+
+<CodeGroup>
+```bash Installation
+npm install pg
+```
+
+```javascript Usage
+const { Client } = require('pg')
+
+const client = new Client({
+  connectionString: process.env.DATABASE_URL
+})
+
+await client.connect()
+
+const res = await client.query('SELECT NOW()')
+console.log(res.rows[0])
+
+await client.end()
+```
+</CodeGroup>
+
+**Learn more:** [Build a Node.js App with CockroachDB](https://www.cockroachlabs.com/docs/stable/build-a-nodejs-app-with-cockroachdb)
+
+### ORM Frameworks
+
+#### Sequelize
+
+**Support level:** Full
+
+Sequelize is a promise-based Node.js ORM that works with CockroachDB via a special adapter.
+
+<CodeGroup>
+```bash Installation
+npm install sequelize sequelize-cockroachdb
+```
+
+```javascript Configuration
+const Sequelize = require('sequelize-cockroachdb');
+
+const sequelize = new Sequelize({
+  dialect: 'postgres',
+  username: 'root',
+  password: '',
+  host: 'localhost',
+  port: 26257,
+  database: 'defaultdb'
+});
+```
+</CodeGroup>
+
+**Important:** Use the `sequelize-cockroachdb` package to account for differences between CockroachDB and PostgreSQL.
+
+#### Prisma
+
+**Support level:** Full
+
+Prisma is a modern TypeScript-first ORM with excellent CockroachDB support.
+
+<CodeGroup>
+```bash Installation
+npm install prisma @prisma/client
+npx prisma init
+```
+
+```prisma Schema
+datasource db {
+  provider = "cockroachdb"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Account {
+  id      String @id @default(dbgenerated("gen_random_uuid()"))
+  balance Int
+}
+```
+
+```typescript Usage
+import { PrismaClient } from '@prisma/client'
+
+const prisma = new PrismaClient()
+
+const account = await prisma.account.create({
+  data: {
+    balance: 1000
+  }
+})
+```
+</CodeGroup>
+
+#### TypeORM
+
+**Support level:** Full
+
+```bash
+npm install typeorm pg
+```
+
+TypeORM provides TypeScript and JavaScript ORM capabilities. Use the `cockroachdb` database type in your configuration.
+
+#### Knex.js
+
+**Support level:** Full
+
+```bash
+npm install knex pg
+```
+
+Knex.js is a SQL query builder that works seamlessly with CockroachDB.
+
+## Python
+
+### Drivers
+
+#### psycopg3
+
+**Support level:** Full
+
+The latest version of the popular PostgreSQL adapter for Python.
+
+<CodeGroup>
+```bash Installation
+pip3 install "psycopg[binary]"
+```
+
+```python Connection
+import psycopg
+import os
+
+conn = psycopg.connect(os.environ['DATABASE_URL'])
+
+with conn.cursor() as cur:
+    cur.execute("SELECT version()")
+    print(cur.fetchone())
+
+conn.close()
+```
+</CodeGroup>
+
+#### psycopg2
+
+**Support level:** Full
+
+The traditional PostgreSQL adapter for Python.
+
+```bash
+pip install psycopg2
+```
+
+For production environments, install from source. For development, you can use `psycopg2-binary`.
+
+### ORM Frameworks
+
+#### SQLAlchemy
+
+**Support level:** Full
+
+SQLAlchemy is the Python SQL toolkit and ORM. Use with the CockroachDB dialect for best results.
+
+<CodeGroup>
+```bash Installation
+pip install sqlalchemy sqlalchemy-cockroachdb psycopg2
+```
+
+```python Configuration
+from sqlalchemy import create_engine
+import os
+
+db_uri = os.environ['DATABASE_URL'].replace(
+    "postgresql://", "cockroachdb://"
+)
+engine = create_engine(db_uri)
+```
+
+```python Model Definition
+from sqlalchemy import Column, Integer
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()
+
+class Account(Base):
+    __tablename__ = 'accounts'
+    id = Column(UUID, primary_key=True)
+    balance = Column(Integer)
+```
+</CodeGroup>
+
+<Warning>
+You must replace `postgresql://` with `cockroachdb://` in your connection string for SQLAlchemy to use the CockroachDB dialect.
+</Warning>
+
+#### Django
+
+**Support level:** Full
+
+CockroachDB supports Django versions 3.1+.
+
+<CodeGroup>
+```bash Installation
+pip install django==3.1.*
+pip install psycopg2-binary  # or psycopg2 for production
+pip install django-cockroachdb==3.1.*
+```
+
+```python settings.py
+DATABASES = {
+    'default': {
+        'ENGINE': 'django_cockroachdb',
+        'NAME': 'django_db',
+        'USER': 'root',
+        'PASSWORD': '',
+        'HOST': 'localhost',
+        'PORT': '26257',
+    }
+}
+```
+</CodeGroup>
+
+<Note>
+The major version of `django-cockroachdb` must correspond to the major version of `django`. The minor release numbers do not need to match.
+</Note>
+
+## Go
+
+### Drivers
+
+#### pgx
+
+**Support level:** Full
+
+The pgx driver is a high-performance PostgreSQL driver for Go.
+
+<CodeGroup>
+```bash Installation
+go get -u github.com/jackc/pgx/v5
+```
+
+```go Usage
+import (
+    "context"
+    "github.com/jackc/pgx/v5"
+)
+
+conn, err := pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
+if err != nil {
+    log.Fatal(err)
+}
+defer conn.Close(context.Background())
+
+var version string
+err = conn.QueryRow(context.Background(), "SELECT version()").Scan(&version)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(version)
+```
+</CodeGroup>
+
+#### pq
+
+**Support level:** Full
+
+```bash
+go get -u github.com/lib/pq
+```
+
+A pure Go PostgreSQL driver for the database/sql package.
+
+### ORM Frameworks
+
+#### GORM
+
+**Support level:** Full
+
+GORM is a popular ORM library for Go.
+
+<CodeGroup>
+```bash Installation
+go get -u github.com/lib/pq
+go get -u gorm.io/gorm
+go get -u gorm.io/driver/postgres
+```
+
+```go Usage
+import (
+    "gorm.io/driver/postgres"
+    "gorm.io/gorm"
+)
+
+dsn := os.Getenv("DATABASE_URL")
+db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+if err != nil {
+    log.Fatal(err)
+}
+
+type Account struct {
+    ID      string `gorm:"primaryKey"`
+    Balance int
+}
+
+db.AutoMigrate(&Account{})
+```
+</CodeGroup>
+
+## Java
+
+<Note>
+CockroachDB requires Java 8 or higher. For production deployments, use TLS certificates for secure connections.
+</Note>
+
+### Drivers
+
+#### JDBC
+
+**Support level:** Full
+
+Download and set up the Java JDBC driver from the [official PostgreSQL JDBC documentation](https://jdbc.postgresql.org/documentation/setup/).
+
+<CodeGroup>
+```java Connection
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
+
+String jdbcUrl = System.getenv("JDBC_DATABASE_URL");
+Connection conn = DriverManager.getConnection(jdbcUrl);
+
+Statement stmt = conn.createStatement();
+ResultSet rs = stmt.executeQuery("SELECT version()");
+
+while (rs.next()) {
+    System.out.println(rs.getString(1));
+}
+
+rs.close();
+stmt.close();
+conn.close();
+```
+
+```groovy Gradle
+implementation 'org.postgresql:postgresql:42.6.0'
+```
+
+```xml Maven
+<dependency>
+    <groupId>org.postgresql</groupId>
+    <artifactId>postgresql</artifactId>
+    <version>42.6.0</version>
+</dependency>
+```
+</CodeGroup>
+
+### ORM Frameworks
+
+#### Hibernate
+
+**Support level:** Full
+
+Hibernate versions 5.4.19 and later support the Hibernate CockroachDB dialect.
+
+<CodeGroup>
+```groovy Gradle
+implementation 'org.hibernate:hibernate-core:6.2.0.Final'
+implementation 'org.postgresql:postgresql:42.6.0'
+```
+
+```xml hibernate.cfg.xml
+<property name="hibernate.dialect">org.hibernate.dialect.CockroachDialect</property>
+<property name="hibernate.connection.url">jdbc:postgresql://localhost:26257/defaultdb</property>
+```
+</CodeGroup>
+
+#### jOOQ
+
+**Support level:** Full
+
+jOOQ provides type-safe SQL queries for Java applications. Use Gradle or Maven for dependency management.
+
+## Ruby
+
+### Drivers
+
+#### pg
+
+**Support level:** Full
+
+<CodeGroup>
+```bash Installation
+gem install pg
+```
+
+```ruby Usage
+require 'pg'
+
+conn = PG.connect(ENV['DATABASE_URL'])
+result = conn.exec('SELECT version()')
+puts result.getvalue(0, 0)
+conn.close
+```
+</CodeGroup>
+
+### ORM Frameworks
+
+#### Active Record
+
+**Support level:** Full
+
+<CodeGroup>
+```bash Installation
+gem install activerecord pg activerecord-cockroachdb-adapter
+```
+
+```ruby Configuration
+require 'active_record'
+require 'activerecord-cockroachdb-adapter'
+
+ActiveRecord::Base.establish_connection(
+  adapter: 'cockroachdb',
+  database: 'bank',
+  host: 'localhost',
+  port: 26257,
+  username: 'root'
+)
+```
+</CodeGroup>
+
+<Note>
+The version of `activerecord-cockroachdb-adapter` must match your Active Record major version (e.g., 6.0.x adapter for Active Record 6.0.x).
+</Note>
+
+## C# / .NET
+
+### Drivers
+
+#### Npgsql
+
+**Support level:** Full
+
+<CodeGroup>
+```bash Create Project
+dotnet new console -o cockroachdb-test-app
+cd cockroachdb-test-app
+```
+
+```bash Install Driver
+dotnet add package Npgsql
+```
+
+```csharp Usage
+using Npgsql;
+using System;
+
+var connString = Environment.GetEnvironmentVariable("DATABASE_URL");
+using var conn = new NpgsqlConnection(connString);
+conn.Open();
+
+using var cmd = new NpgsqlCommand("SELECT version()", conn);
+var version = cmd.ExecuteScalar();
+Console.WriteLine(version);
+```
+</CodeGroup>
+
+## Rust
+
+### Drivers
+
+#### rust-postgres
+
+**Support level:** Partial
+
+```toml Cargo.toml
+[dependencies]
+postgres = "0.19"
+```
+
+Install the Rust-Postgres driver as described in the [official documentation](https://crates.io/crates/postgres).
+
+## Next Steps
+
+After installing a client driver:
+
+<CardGroup cols={2}>
+  <Card title="Connect to Database" icon="link">
+    Learn how to configure connection strings and establish connections
+  </Card>
+  
+  <Card title="Use ORMs" icon="database" href="/developer/orms">
+    Explore ORM frameworks and best practices
+  </Card>
+  
+  <Card title="View Examples" icon="code">
+    Browse complete example applications for your language
+  </Card>
+  
+  <Card title="Best Practices" icon="star" href="/developer/best-practices">
+    Follow recommended patterns for production applications
+  </Card>
+</CardGroup>

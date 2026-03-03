@@ -1,0 +1,119 @@
+---
+title: Architecture overview
+description: Learn about the inner workings of CockroachDB's architecture and how it achieves scalability and consistency.
+---
+
+CockroachDB was designed to create the source-available database that is both scalable and consistent. This guide details the inner workings of the `cockroach` process and explains how CockroachDB achieves its goals.
+
+<Note>
+You do not need to understand the underlying architecture to use CockroachDB. These pages give serious users and database enthusiasts a high-level framework to explain what's happening under the hood.
+</Note>
+
+## Using this guide
+
+This guide is broken out into pages detailing each layer of CockroachDB. We recommend reading through the layers sequentially, starting with this overview and then proceeding to the SQL layer.
+
+If you're looking for a high-level understanding of CockroachDB, you can read the overview section of each layer. For more technical detail, read the components sections as well.
+
+<Info>
+This guide details how CockroachDB is built, but does not explain how to build an application using CockroachDB.
+</Info>
+
+## Goals of CockroachDB
+
+CockroachDB was designed to meet the following goals:
+
+- **Make life easier for humans**: Be low-touch and highly automated for operators and simple to reason about for developers.
+- **Industry-leading consistency**: Enable distributed transactions and remove the pain of eventual consistency issues and stale reads, even on massively scaled deployments.
+- **Always-on database**: Accept reads and writes on all nodes without generating conflicts.
+- **Flexible deployment**: Deploy in any environment without tying you to any platform or vendor.
+- **Familiar tools**: Support familiar tools for working with relational data using SQL.
+
+With the confluence of these features, CockroachDB helps you build global, scalable, resilient deployments and applications.
+
+## How CockroachDB works
+
+CockroachDB starts running on machines with two commands:
+
+<Steps>
+
+<Step title="Start nodes">
+
+Run `cockroach start` with a `--join` flag for all of the initial nodes in the cluster, so the process knows all of the other machines it can communicate with.
+
+</Step>
+
+<Step title="Initialize cluster">
+
+Run `cockroach init` to perform a one-time initialization of the cluster.
+
+</Step>
+
+</Steps>
+
+Once the CockroachDB cluster is initialized, developers interact with CockroachDB through a PostgreSQL-compatible SQL API. Thanks to the symmetrical behavior of all nodes in a cluster, you can send SQL requests to any node. This makes CockroachDB easy to integrate with load balancers.
+
+After receiving SQL remote procedure calls (RPCs), nodes convert them into key-value (KV) operations that work with the distributed, transactional key-value store.
+
+## Data distribution and replication
+
+As RPCs start filling your cluster with data, CockroachDB starts algorithmically distributing your data among the nodes of the cluster, breaking the data up into chunks called **ranges**. Each range is replicated to at least 3 nodes by default to ensure survivability. This ensures that if any nodes go down, you still have copies of the data which can be used for:
+
+- Continuing to serve reads and writes
+- Consistently replicating the data to other nodes
+
+If a node receives a read or write request it cannot directly serve, it finds the node that can handle the request and communicates with that node. This means you do not need to know where in the cluster a specific portion of your data is stored. CockroachDB tracks it for you and enables symmetric read/write behavior from each node.
+
+Any changes made to the data in a range rely on a consensus algorithm to ensure that the majority of the range's replicas agree to commit the change. This is how CockroachDB achieves the industry-leading isolation guarantees that allow it to provide your application with consistent reads and writes, regardless of which node you communicate with.
+
+Ultimately, data is written to and read from disk using an efficient storage engine, which is able to keep track of the data's timestamp. This has the benefit of letting CockroachDB support the SQL standard `AS OF SYSTEM TIME` clause, letting you find historical data for a period of time.
+
+## Architecture layers
+
+At the highest level, CockroachDB converts clients' SQL statements into key-value (KV) data, which is distributed among nodes and written to disk. CockroachDB's architecture is manifested as a number of layers, each of which interacts with the layers directly above and below it as relatively opaque services.
+
+The following table describes the function each layer performs:
+
+| Layer | Order | Purpose |
+|-------|-------|----------|
+| SQL | 1 | Translate client SQL queries to KV operations |
+| Transaction | 2 | Allow atomic changes to multiple KV entries |
+| Distribution | 3 | Present replicated KV ranges as a single entity |
+| Replication | 4 | Consistently and synchronously replicate KV ranges across many nodes |
+| Storage | 5 | Read and write KV data on disk |
+
+## Database terms
+
+<Accordion title="Key database concepts">
+
+**Node**: An individual machine running CockroachDB.
+
+**Cluster**: A deployment of CockroachDB that acts as a single logical database.
+
+**Range**: CockroachDB stores all user data and system data in a sorted map of key-value pairs. This keyspace is divided into ranges, contiguous chunks of the key-space.
+
+**Replica**: CockroachDB replicates each range and stores each replica on a different node.
+
+**Leaseholder**: For each range, one of the replicas holds the lease. This replica, referred to as the leaseholder, is the one that receives and coordinates all read and write requests for the range.
+
+</Accordion>
+
+## CockroachDB architecture terms
+
+<Accordion title="Architecture-specific concepts">
+
+**Store**: Each node contains at least one store, which is where CockroachDB reads and writes its data on disk.
+
+**Meta ranges**: CockroachDB stores the locations of all ranges in a two-level index at the beginning of the key-space, known as meta ranges.
+
+**Write intent**: A provisional, uncommitted value written to a key that acts as both a lock and a value.
+
+**Raft**: The consensus protocol CockroachDB uses to ensure data consistency across replicas.
+
+**Transaction record**: A record that tracks the status of a transaction (PENDING, STAGING, COMMITTED, or ABORTED).
+
+</Accordion>
+
+## What's next?
+
+Start by learning about what CockroachDB does with your SQL statements at the [SQL layer](/architecture/sql-layer).

@@ -1,0 +1,171 @@
+---
+title: CREATE ROLE
+description: Create SQL roles with the CREATE ROLE statement.
+---
+
+The `CREATE ROLE` statement creates SQL roles, which are groups containing any number of roles and users as members. You can assign privileges to roles, and all members of the role (regardless of whether they are direct or indirect members) will inherit the role's privileges.
+
+You can use the keywords `ROLE` and `USER` interchangeably. `CREATE USER` is equivalent to `CREATE ROLE`, with one exception: `CREATE ROLE` sets the `NOLOGIN` role option, which prevents the new role from being used to log in to the database. You can use `CREATE ROLE` and specify the `LOGIN` role option to achieve the same result as `CREATE USER`.
+
+## Considerations
+
+- After creating a role, you must grant it privileges to databases and tables
+- All privileges of a role are inherited by all of its members
+- Users and roles can be members of roles
+- Role options of a role are not inherited by any of its members
+- There is no limit to the number of members in a role
+- Membership loops are not allowed (direct or indirect)
+
+## Required privileges
+
+Unless a role is a member of the `admin` role, additional privileges are required to manage other roles:
+- To create other roles, a role must have the `CREATEROLE` role option
+- To add the `LOGIN` capability for other roles so that they can log in as users, a role must also have the `CREATELOGIN` role option
+- To grant or revoke membership to a role for additional roles, a member of the role must be set as a role admin for that role
+
+## Syntax
+
+```sql
+CREATE ROLE [IF NOT EXISTS] role_name [WITH role_option [, ...]]
+```
+
+## Parameters
+
+<ParamField path="IF NOT EXISTS" type="keyword">
+  Create a new role only if a role of the same name does not already exist. If one does exist, do not return an error.
+</ParamField>
+
+<ParamField path="role_name" type="identifier">
+  The name of the role to create.
+  
+  Role names:
+  - Are case-insensitive
+  - Must start with either a letter or underscore
+  - Must contain only letters, numbers, periods, or underscores
+  - Must be between 1 and 63 characters
+  - Cannot be `none`
+  - Cannot start with `pg_` or `crdb_internal`
+  - User and role names share the same namespace and must be unique
+</ParamField>
+
+<ParamField path="WITH role_option" type="option">
+  Apply a role option to the role.
+  
+  Available role options:
+  - `CREATEROLE` / `NOCREATEROLE` - Allow/disallow the role to create, alter, and drop other roles
+  - `CREATEDB` / `NOCREATEDB` - Allow/disallow the role to create databases
+  - `CREATELOGIN` / `NOCREATELOGIN` - Allow/disallow the role to manage authentication using `WITH PASSWORD`, `VALID UNTIL`, and `LOGIN`/`NOLOGIN`
+  - `LOGIN` / `NOLOGIN` - Allow/disallow the role to log in with one of the client authentication methods
+  - `CONTROLCHANGEFEED` / `NOCONTROLCHANGEFEED` - Allow/disallow the role to run `CREATE CHANGEFEED` on tables they have `SELECT` privileges on
+  - `MODIFYCLUSTERSETTING` / `NOMODIFYCLUSTERSETTING` - Allow/disallow the role to modify cluster settings with `SET CLUSTER SETTING`
+  - `PASSWORD password` / `PASSWORD NULL` - Set the role's password for password authentication
+  - `VALID UNTIL timestamp` - Set the expiration time for a role's password
+  - `VIEWACTIVITY` / `NOVIEWACTIVITY` - Allow/disallow the role to see other users' queries and sessions
+  - `VIEWACTIVITYREDACTED` / `NOVIEWACTIVITYREDACTED` - Allow/disallow the role to see other users' queries and sessions, but with masked constants
+  - `VIEWCLUSTERSETTING` / `NOVIEWCLUSTERSETTING` - Allow/disallow the role to view cluster settings
+  - `CANCELQUERY` / `NOCANCELQUERY` - Allow/disallow the role to cancel queries
+  - `VIEWCLUSTERMETADATA` / `NOVIEWCLUSTERMETADATA` - Allow/disallow the role to view cluster metadata
+</ParamField>
+
+## Examples
+
+### Create a role
+
+```sql
+CREATE ROLE no_options;
+```
+
+```sql
+SHOW ROLES;
+```
+
+```
+  username   | options   | member_of
+-------------+-----------+-----------
+  admin      | {}        | {}
+  no_options | {NOLOGIN} | {}
+  root       | {}        | {admin}
+```
+
+After creating roles, you must grant them privileges to databases.
+
+### Create a role that can log in to the database
+
+```sql
+CREATE ROLE can_login WITH LOGIN PASSWORD '$tr0nGpassW0rD' VALID UNTIL '2025-10-10';
+```
+
+```sql
+SHOW ROLES;
+```
+
+```
+  username  |                     options                     | member_of
+------------+-------------------------------------------------+-----------
+  admin     | {}                                              | {}
+  can_login | {VALID UNTIL=2025-10-10 00:00:00+00:00}         | {}
+  no_options| {NOLOGIN}                                       | {}
+  root      | {}                                              | {admin}
+```
+
+### Prevent a role from using password authentication
+
+The following statement prevents the role from using password authentication and mandates certificate-based client authentication:
+
+```sql
+CREATE ROLE no_password WITH PASSWORD NULL;
+```
+
+### Create a role that can create other roles
+
+The following example allows the role to create other users and manage authentication methods for them:
+
+```sql
+CREATE ROLE can_create_role WITH CREATEROLE CREATELOGIN;
+```
+
+```sql
+SHOW ROLES;
+```
+
+```
+   username     |                     options                     | member_of
+----------------+-------------------------------------------------+-----------
+  admin         | {}                                              | {}
+  can_create_role| {CREATELOGIN,CREATEROLE,NOLOGIN}                | {}
+  can_login     | {VALID UNTIL=2025-10-10 00:00:00+00:00}         | {}
+  no_options    | {NOLOGIN}                                       | {}
+  root          | {}                                              | {admin}
+```
+
+### Create a role that can create and rename databases
+
+The following example allows the role to create or rename databases:
+
+```sql
+CREATE ROLE can_create_db WITH CREATEDB;
+```
+
+```sql
+SHOW ROLES;
+```
+
+```
+    username       |                     options                     | member_of
+-------------------+-------------------------------------------------+-----------
+  admin            | {}                                              | {}
+  can_create_db    | {CREATEDB,NOLOGIN}                              | {}
+  can_create_role  | {CREATELOGIN,CREATEROLE,NOLOGIN}                | {}
+  can_login        | {VALID UNTIL=2025-10-10 00:00:00+00:00}         | {}
+  no_options       | {NOLOGIN}                                       | {}
+  root             | {}                                              | {admin}
+```
+
+## See also
+
+- ALTER ROLE
+- DROP ROLE
+- SHOW ROLES
+- GRANT
+- REVOKE
+- CREATE USER

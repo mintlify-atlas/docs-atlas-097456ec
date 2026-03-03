@@ -1,0 +1,431 @@
+---
+title: Start a local cluster
+description: Run an insecure multi-node CockroachDB cluster locally for testing and development.
+---
+
+This guide shows you how to start an insecure, multi-node CockroachDB cluster on your local machine. Running multiple nodes locally is useful for testing CockroachDB's distributed features like replication and resilience.
+
+<Warning>
+This guide creates an **insecure** cluster for local testing only. Never use these instructions for production deployments. For production, see the [Production Checklist](https://www.cockroachlabs.com/docs/stable/recommended-production-settings.html).
+</Warning>
+
+<Info>
+For a simpler single-node setup, see the [Quickstart guide](/quickstart).
+</Info>
+
+## Before you begin
+
+- Make sure you have [installed CockroachDB](/install-cockroachdb)
+- Running multiple nodes on a single host is useful for testing but not suitable for production
+- For production deployments, see [Manual Deployment](https://www.cockroachlabs.com/docs/stable/manual-deployment.html) or [Kubernetes Deployment](https://www.cockroachlabs.com/docs/stable/kubernetes-overview.html)
+
+<Warning>
+Reusing a previously initialized store when starting a new cluster can lead to panics or other problems. Always use a fresh data directory or delete the previous store before starting a new cluster.
+
+The default store directory is `cockroach-data/` in the same directory as the `cockroach` command.
+</Warning>
+
+## Step 1: Start the cluster
+
+You'll start three nodes on your local machine, each listening on different ports.
+
+<Steps>
+  <Step title="Start node 1">
+    Open a terminal and start the first node:
+
+    ```bash
+    cockroach start \
+    --insecure \
+    --store=node1 \
+    --listen-addr=localhost:26257 \
+    --http-addr=localhost:8080 \
+    --join=localhost:26257,localhost:26258,localhost:26259
+    ```
+
+    You'll see output like:
+
+    ```
+    *
+    * WARNING: RUNNING IN INSECURE MODE!
+    *
+    * - Your cluster is open for any client that can access localhost.
+    * - Any user, even root, can log in without providing a password.
+    * - Any user, connecting as root, can read or write any data in your cluster.
+    * - There is no network encryption nor authentication, and thus no confidentiality.
+    *
+    * INFO: initial startup completed.
+    * Node will now attempt to join a running cluster, or wait for `cockroach init`.
+    * Client connections will be accepted after this completes successfully.
+    *
+    ```
+
+    <Tip>
+    Keep this terminal open. The node runs in the foreground.
+    </Tip>
+  </Step>
+
+  <Step title="Understand the flags">
+    Let's break down what each flag does:
+
+    - `--insecure`: Disables encryption and authentication (for testing only)
+    - `--store=node1`: Directory where this node stores its data
+    - `--listen-addr=localhost:26257`: Address and port for SQL and internal traffic
+    - `--http-addr=localhost:8080`: Address and port for the DB Console
+    - `--join`: List of addresses for all nodes in the cluster
+
+    <Info>
+    The `--join` flag specifies all nodes that will initially comprise your cluster. You'll use the same `--join` flag for all nodes.
+    </Info>
+  </Step>
+
+  <Step title="Start node 2">
+    Open a new terminal and start the second node:
+
+    ```bash
+    cockroach start \
+    --insecure \
+    --store=node2 \
+    --listen-addr=localhost:26258 \
+    --http-addr=localhost:8081 \
+    --join=localhost:26257,localhost:26258,localhost:26259
+    ```
+
+    Notice the different `--store`, `--listen-addr`, and `--http-addr` values.
+  </Step>
+
+  <Step title="Start node 3">
+    Open another new terminal and start the third node:
+
+    ```bash
+    cockroach start \
+    --insecure \
+    --store=node3 \
+    --listen-addr=localhost:26259 \
+    --http-addr=localhost:8082 \
+    --join=localhost:26257,localhost:26258,localhost:26259
+    ```
+  </Step>
+
+  <Step title="Initialize the cluster">
+    Open a new terminal and initialize the cluster:
+
+    ```bash
+    cockroach init --insecure --host=localhost:26257
+    ```
+
+    You'll see:
+
+    ```
+    Cluster successfully initialized
+    ```
+
+    At this point, all three nodes will print startup details to their logs and terminals.
+  </Step>
+</Steps>
+
+## Step 2: Use the built-in SQL client
+
+Now that your cluster is running, you can connect to any node as a SQL gateway.
+
+<Steps>
+  <Step title="Connect to node 1">
+    In a new terminal, start the SQL shell:
+
+    ```bash
+    cockroach sql --insecure --host=localhost:26257
+    ```
+  </Step>
+
+  <Step title="Run SQL statements">
+    Create a database and table:
+
+    ```sql
+    CREATE DATABASE bank;
+    ```
+
+    ```sql
+    CREATE TABLE bank.accounts (id INT PRIMARY KEY, balance DECIMAL);
+    ```
+
+    Insert some data:
+
+    ```sql
+    INSERT INTO bank.accounts VALUES (1, 1000.50);
+    ```
+
+    Query the data:
+
+    ```sql
+    SELECT * FROM bank.accounts;
+    ```
+
+    Result:
+
+    ```
+      id | balance
+    +----+---------+
+       1 | 1000.50
+    (1 row)
+    ```
+  </Step>
+
+  <Step title="Connect to node 2">
+    Open another terminal and connect to the second node:
+
+    ```bash
+    cockroach sql --insecure --host=localhost:26258
+    ```
+
+    Run the same query:
+
+    ```sql
+    SELECT * FROM bank.accounts;
+    ```
+
+    Result:
+
+    ```
+      id | balance
+    +----+---------+
+       1 | 1000.50
+    (1 row)
+    ```
+
+    <Tip>
+    Both nodes return the same data, demonstrating that data is replicated across the cluster.
+    </Tip>
+  </Step>
+
+  <Step title="Exit the SQL shells">
+    Exit each SQL shell by typing:
+
+    ```sql
+    \q
+    ```
+  </Step>
+</Steps>
+
+## Step 3: Run a sample workload
+
+CockroachDB includes built-in workloads for simulating client traffic. Let's run the MovR workload, which simulates a vehicle-sharing application.
+
+<Steps>
+  <Step title="Load the initial dataset">
+    ```bash
+    cockroach workload init movr \
+    'postgresql://root@localhost:26257?sslmode=disable'
+    ```
+
+    Output:
+
+    ```
+    I190926 16:50:35.663708 1 workload/workloadsql/dataload.go:135  imported users (0s, 50 rows)
+    I190926 16:50:35.682583 1 workload/workloadsql/dataload.go:135  imported vehicles (0s, 15 rows)
+    I190926 16:50:35.769572 1 workload/workloadsql/dataload.go:135  imported rides (0s, 500 rows)
+    I190926 16:50:35.836619 1 workload/workloadsql/dataload.go:135  imported vehicle_location_histories (0s, 1000 rows)
+    I190926 16:50:35.915498 1 workload/workloadsql/dataload.go:135  imported promo_codes (0s, 1000 rows)
+    ```
+  </Step>
+
+  <Step title="Run the workload">
+    Run the workload for 5 minutes:
+
+    ```bash
+    cockroach workload run movr \
+    --duration=5m \
+    'postgresql://root@localhost:26257?sslmode=disable'
+    ```
+
+    This simulates realistic application traffic against your cluster.
+  </Step>
+</Steps>
+
+## Step 4: Access the DB Console
+
+The DB Console provides insights into your cluster's health and performance.
+
+<Steps>
+  <Step title="Open the DB Console">
+    Navigate to [http://localhost:8080](http://localhost:8080) in your browser.
+  </Step>
+
+  <Step title="View cluster overview">
+    On the **Cluster Overview** page, you'll see:
+    
+    - Three live nodes
+    - Identical replica counts on each node
+    - This demonstrates CockroachDB's automated replication via the Raft consensus protocol
+
+    <Note>
+    Capacity metrics can be incorrect when running multiple nodes on a single machine. This is a known limitation for local testing.
+    </Note>
+  </Step>
+
+  <Step title="Explore metrics">
+    Click **Metrics** to view:
+    
+    - SQL query graphs
+    - Service latency over time
+    - Resource utilization
+    - Replication status
+  </Step>
+
+  <Step title="View databases and statements">
+    Use the **Databases**, **Statements**, and **Jobs** pages to:
+    
+    - View database and table details
+    - Assess query performance
+    - Monitor long-running operations
+  </Step>
+</Steps>
+
+## Step 5: Simulate node maintenance
+
+One of CockroachDB's key features is surviving node failures. Let's test it.
+
+<Steps>
+  <Step title="Find node processes">
+    In a new terminal, get the process IDs:
+
+    ```bash
+    ps -ef | grep cockroach | grep -v grep
+    ```
+
+    Output:
+
+    ```
+    501  4482     1   0  2:41PM ttys000    0:09.78 cockroach start --insecure --store=node1 ...
+    501  4497     1   0  2:41PM ttys000    0:08.54 cockroach start --insecure --store=node2 ...
+    501  4503     1   0  2:41PM ttys000    0:08.54 cockroach start --insecure --store=node3 ...
+    ```
+  </Step>
+
+  <Step title="Stop node 3">
+    Gracefully shut down node 3 using its process ID:
+
+    ```bash
+    kill -TERM 4503
+    ```
+
+    <Info>
+    Replace `4503` with the actual process ID from your system.
+    </Info>
+  </Step>
+
+  <Step title="Observe the cluster">
+    In the DB Console, you'll see:
+    
+    - One node marked as "suspect"
+    - SQL traffic continuing without interruption
+    - This demonstrates CockroachDB's fault tolerance
+  </Step>
+
+  <Step title="Restart node 3">
+    Go to the terminal for node 3 and restart it:
+
+    ```bash
+    cockroach start \
+    --insecure \
+    --store=node3 \
+    --listen-addr=localhost:26259 \
+    --http-addr=localhost:8082 \
+    --join=localhost:26257,localhost:26258,localhost:26259
+    ```
+
+    The node rejoins the cluster and automatically catches up.
+  </Step>
+</Steps>
+
+## Step 6: Scale the cluster
+
+Adding capacity is as simple as starting more nodes.
+
+<Steps>
+  <Step title="Start node 4">
+    In a new terminal:
+
+    ```bash
+    cockroach start \
+    --insecure \
+    --store=node4 \
+    --listen-addr=localhost:26260 \
+    --http-addr=localhost:8083 \
+    --join=localhost:26257,localhost:26258,localhost:26259
+    ```
+  </Step>
+
+  <Step title="Start node 5">
+    In another new terminal:
+
+    ```bash
+    cockroach start \
+    --insecure \
+    --store=node5 \
+    --listen-addr=localhost:26261 \
+    --http-addr=localhost:8084 \
+    --join=localhost:26257,localhost:26258,localhost:26259
+    ```
+  </Step>
+
+  <Step title="Observe automatic rebalancing">
+    In the DB Console **Cluster Overview** page:
+    
+    - You'll see five nodes
+    - Initially, nodes 4 and 5 have lower replica counts
+    - Within minutes, replica counts even out across all nodes
+    - This demonstrates CockroachDB's automatic data rebalancing
+  </Step>
+</Steps>
+
+## Step 7: Stop the cluster
+
+When you're done testing:
+
+<Steps>
+  <Step title="Get process IDs">
+    ```bash
+    ps -ef | grep cockroach | grep -v grep
+    ```
+  </Step>
+
+  <Step title="Stop all nodes">
+    Gracefully shut down each node:
+
+    ```bash
+    kill -TERM <process_id>
+    ```
+
+    Repeat for each node.
+
+    <Warning>
+    For nodes 4 and 5, the shutdown will take longer (about a minute) because the cluster loses quorum and is no longer operational.
+    </Warning>
+  </Step>
+
+  <Step title="Remove data directories (optional)">
+    If you don't plan to restart the cluster:
+
+    ```bash
+    rm -rf node1 node2 node3 node4 node5
+    ```
+  </Step>
+</Steps>
+
+## What's next?
+
+Now that you've explored CockroachDB's distributed features:
+
+<CardGroup cols={2}>
+  <Card title="Build a sample app" icon="code" href="https://www.cockroachlabs.com/docs/stable/example-apps.html">
+    Connect your application to CockroachDB
+  </Card>
+  <Card title="Learn CockroachDB SQL" icon="book" href="https://www.cockroachlabs.com/docs/stable/learn-cockroachdb-sql.html">
+    Master the SQL dialect and built-in functions
+  </Card>
+  <Card title="Explore fault tolerance" icon="shield-check" href="https://www.cockroachlabs.com/docs/stable/demo-cockroachdb-resilience.html">
+    See how CockroachDB survives failures
+  </Card>
+  <Card title="Production deployment" icon="server" href="https://www.cockroachlabs.com/docs/stable/recommended-production-settings.html">
+    Deploy CockroachDB in production
+  </Card>
+</CardGroup>

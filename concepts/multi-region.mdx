@@ -1,0 +1,362 @@
+---
+title: Multi-Region Deployments
+description: Configure CockroachDB for optimal performance and resilience across multiple geographic regions
+---
+
+CockroachDB is built for multi-region deployments from the ground up. You can distribute your data across continents while maintaining strong consistency, low latency for local reads and writes, and automatic failover when entire regions become unavailable.
+
+## Multi-Region Architecture
+
+In a multi-region deployment, your CockroachDB cluster spans multiple geographic regions, with nodes in each region:
+
+- **Region**: A geographic area (e.g., `us-east`, `eu-west`, `asia-southeast`)
+- **Availability Zone**: A fault-isolated location within a region
+- **Node Locality**: Each node is tagged with its region and zone at startup
+
+<Info>
+Node localities are set via startup flags like `--locality=region=us-east,zone=us-east-1`. CockroachDB uses these locality tags to make intelligent placement decisions for data and leases.
+</Info>
+
+### Why Multi-Region?
+
+Deploying across regions provides:
+
+1. **Low-latency access**: Users in each region read/write from nearby nodes
+2. **Region-level resilience**: Survive entire region outages
+3. **Regulatory compliance**: Keep data in specific geographic boundaries
+4. **Disaster recovery**: Data is automatically distributed across failure domains
+
+## Survival Goals
+
+CockroachDB lets you choose how much failure your database can tolerate:
+
+<Accordion title="Zone Survival (Default)">
+**Survives**: Single availability zone failure within a region
+
+**Configuration**:
+- 3 replicas spread across 3 availability zones in a region
+- Requires a majority (2 of 3) to remain available
+
+**Performance**:
+- Low-latency writes (within one region)
+- Low-latency local reads
+- Higher-latency remote reads (unless using follower reads)
+
+**Use when**: You need high availability within a region but can accept region-level failures requiring manual intervention.
+
+```sql
+ALTER DATABASE mydb SURVIVE ZONE FAILURE;
+```
+</Accordion>
+
+<Accordion title="Region Survival">
+**Survives**: Entire region failure
+
+**Configuration**:
+- At least 5 replicas spread across 3+ regions
+- Requires a majority to remain available across regions
+
+**Performance**:
+- Higher-latency writes (cross-region consensus required)
+- Low-latency local reads with proper table locality
+- Increased resilience comes with latency tradeoff
+
+**Use when**: You cannot afford region-level outages and need automatic failover across regions.
+
+```sql
+ALTER DATABASE mydb SURVIVE REGION FAILURE;
+```
+</Accordion>
+
+<Warning>
+Region survival requires **at least 3 regions** to ensure a majority quorum survives if one region fails. Don't configure region survival with only 2 regions.
+</Warning>
+
+### Survival Formula
+
+The number of simultaneous failures you can tolerate:
+
+```
+Failures tolerated = (Number of regions - 1) / 2
+```
+
+| Regions | Zone Survival | Region Survival |
+|---------|---------------|----------------|
+| 1 region (3 zones) | 1 zone | N/A |
+| 3 regions | 1 zone per region | 1 region |
+| 5 regions | 1 zone per region | 2 regions |
+
+## Table Localities
+
+Different tables have different access patterns. CockroachDB provides three table locality options to optimize for your workload:
+
+### Regional by Table (Default)
+
+**Best for**: Tables accessed primarily from one region
+
+**Behavior**:
+- All replicas for the table are in a single "home" region
+- Low-latency reads and writes from the home region
+- Higher-latency access from other regions
+
+```sql
+ALTER TABLE users SET LOCALITY REGIONAL BY TABLE IN "us-east";
+```
+
+<Accordion title="Performance Characteristics">
+- **Writes from home region**: Low latency (intra-region consensus)
+- **Writes from remote region**: High latency (cross-region network)
+- **Reads from home region**: Low latency (local leaseholder)
+- **Reads from remote region**: High latency unless using follower reads
+
+**Example use case**: A `users` table for a US-based application where most users are in `us-east`.
+</Accordion>
+
+### Regional by Row
+
+**Best for**: Tables where different rows are accessed from different regions
+
+**Behavior**:
+- Each row is assigned a "home region" (typically via a `crdb_region` column)
+- Rows are automatically partitioned by region
+- Each region's rows have their leaseholder in that region
+
+```sql
+ALTER TABLE orders SET LOCALITY REGIONAL BY ROW;
+```
+
+<Accordion title="Performance Characteristics">
+- **Writes to row's home region**: Low latency (local consensus)
+- **Writes from remote region**: Higher latency (cross-region routing)
+- **Reads from row's home region**: Low latency (local leaseholder)
+- **Reads from remote region**: Low latency for stale reads via follower reads
+
+**Example use case**: An `orders` table where each order is tied to a user's region and should be fast to access from that region.
+
+```sql
+-- Rows automatically include the region column
+INSERT INTO orders (region, user_id, total) 
+VALUES ('us-east', 123, 99.99);
+
+-- Query filters by region for fast lookups
+SELECT * FROM orders 
+WHERE region = 'us-east' AND user_id = 123;
+```
+</Accordion>
+
+### Global Tables
+
+**Best for**: Small, read-heavy tables accessed from all regions
+
+**Behavior**:
+- Data is replicated to all regions
+- Non-voting replicas in remote regions serve low-latency reads
+- Writes have higher latency (must achieve consensus)
+
+```sql
+ALTER TABLE product_catalog SET LOCALITY GLOBAL;
+```
+
+<Accordion title="Performance Characteristics">
+- **Writes from any region**: Higher latency (cross-region consensus required)
+- **Reads from any region**: Low latency (local non-voting replica)
+
+**Example use case**: A `product_catalog` table that rarely changes but is read frequently from all regions.
+</Accordion>
+
+<Tip>
+Global tables are perfect for reference data like configuration settings, product catalogs, or lookup tables that change infrequently but are accessed constantly.
+</Tip>
+
+## Configuration Decision Matrix
+
+Choose your configuration based on your requirements:
+
+| Requirement | Survival Goal | Table Locality | Result |
+|-------------|---------------|----------------|--------|
+| Single region, HA | Zone | Regional by Table | Low latency, tolerates zone failures |
+| Multi-region app, HA | Zone | Regional by Row | Low latency per region, can't survive region failure |
+| Multi-region app, resilient | Region | Regional by Row | Higher write latency, survives region failure |
+| Read-mostly global | Region | Global | Low-latency reads everywhere, higher write latency |
+
+<Steps>
+  <Step title="Assess Your Needs">
+    Determine:
+    - Are users in one region or many?
+    - Can you tolerate region-level failures?
+    - What's your read vs. write ratio?
+  </Step>
+  
+  <Step title="Choose Survival Goal">
+    - Need automatic region failover? → Region survival
+    - Zone-level HA sufficient? → Zone survival
+  </Step>
+  
+  <Step title="Select Table Localities">
+    - Single region primary? → Regional by Table
+    - Data belongs to users in different regions? → Regional by Row  
+    - Read-heavy reference data? → Global
+  </Step>
+  
+  <Step title="Test and Measure">
+    Deploy in a staging environment and measure:
+    - Read/write latencies from each region
+    - Behavior during simulated failures
+    - Query patterns and hot spots
+  </Step>
+</Steps>
+
+## Setting Up Multi-Region
+
+### Add Regions to Database
+
+```sql
+-- Set the primary region (required first)
+ALTER DATABASE mydb SET PRIMARY REGION "us-east";
+
+-- Add additional regions
+ALTER DATABASE mydb ADD REGION "us-west";
+ALTER DATABASE mydb ADD REGION "eu-west";
+```
+
+### Configure Survival Goal
+
+```sql
+-- Enable region-level survival
+ALTER DATABASE mydb SURVIVE REGION FAILURE;
+```
+
+### Set Table Localities
+
+```sql
+-- User table: most users in us-east
+ALTER TABLE users SET LOCALITY REGIONAL BY TABLE IN "us-east";
+
+-- Orders: partition by user's region
+ALTER TABLE orders SET LOCALITY REGIONAL BY ROW;
+
+-- Products: read from everywhere
+ALTER TABLE products SET LOCALITY GLOBAL;
+```
+
+<Note>
+When you set a database to REGIONAL BY ROW, CockroachDB automatically adds a `crdb_region` column to track each row's home region. You can also define your own partitioning column.
+</Note>
+
+## Advanced Patterns
+
+### Secondary Regions
+
+Define a secondary region for faster failover and read replicas:
+
+```sql
+ALTER DATABASE mydb SET SECONDARY REGION "us-west";
+```
+
+This places additional non-voting replicas in the secondary region for:
+- Faster follower reads from the secondary region
+- Quicker promotion to primary if the primary region fails
+
+### Follower Reads for Multi-Region
+
+Reduce cross-region latency for reads that can tolerate slight staleness:
+
+```sql
+-- Read from nearest replica (up to 5 seconds stale)
+SELECT * FROM orders 
+AS OF SYSTEM TIME follower_read_timestamp()
+WHERE user_id = 123;
+```
+
+<Tip>
+Follower reads are especially powerful in multi-region deployments. A user in `eu-west` can read from a local replica even if the leaseholder is in `us-east`, with staleness typically measured in seconds.
+</Tip>
+
+### Geo-Partitioned Leaseholders
+
+For REGIONAL BY ROW tables, explicitly prefer leaseholders in each partition's home region:
+
+```sql
+ALTER TABLE orders CONFIGURE ZONE USING 
+  lease_preferences = '[[+region=us-east], [+region=us-west], [+region=eu-west]]';
+```
+
+This ensures:
+- US-East rows are served by leaseholders in us-east
+- US-West rows are served by leaseholders in us-west
+- EU-West rows are served by leaseholders in eu-west
+
+## Performance Tuning
+
+### Clock Skew Considerations
+
+Multi-region deployments are sensitive to clock skew:
+
+<Warning>
+**Maximum clock offset**: CockroachDB defaults to 500ms maximum clock offset. If nodes drift beyond this, they will crash to protect data consistency.
+
+Ensure all nodes run NTP or similar clock synchronization, especially in multi-region deployments where network latency is already high.
+</Warning>
+
+### Optimizing Cross-Region Queries
+
+<Accordion title="Avoid Cross-Region Joins">
+Joins across tables in different regions require cross-region communication:
+
+```sql
+-- Slow: users in us-east, orders in eu-west
+SELECT u.name, o.total 
+FROM users u 
+JOIN orders o ON u.id = o.user_id;
+```
+
+**Solutions**:
+- Denormalize data to reduce joins
+- Co-locate related tables in the same region
+- Use REGIONAL BY ROW with matching region columns
+</Accordion>
+
+<Accordion title="Batch Cross-Region Writes">
+Multiple writes to the same region should be batched:
+
+```sql
+-- Better: batch inserts in a single transaction
+BEGIN;
+INSERT INTO orders (region, user_id, total) VALUES 
+  ('us-east', 1, 50.00),
+  ('us-east', 2, 75.00),
+  ('us-east', 3, 100.00);
+COMMIT;
+```
+
+This reduces cross-region round trips from N to 1.
+</Accordion>
+
+### Monitoring Multi-Region Health
+
+Key metrics to monitor:
+
+- **Cross-region latency**: Track network latency between regions
+- **Replica distribution**: Ensure replicas are balanced across regions
+- **Leaseholder distribution**: Verify leaseholders are in preferred regions
+- **Follower read usage**: Measure % of reads served by followers
+
+## Common Pitfalls
+
+<Warning>
+**Don't use 2-region setups with region survival**: With only 2 regions, losing one region means you've lost majority quorum. Always use 3+ regions for region survival.
+</Warning>
+
+<Warning>
+**Don't over-replicate**: More replicas = higher write latency and storage costs. Start with 3x replication and increase only if you need higher failure tolerance.
+</Warning>
+
+<Warning>
+**Don't ignore locality constraints**: If you pin data to specific regions for compliance, verify with `SHOW ZONE CONFIGURATION` that constraints are correctly applied.
+</Warning>
+
+## See Also
+
+- [Distributed Transactions](/concepts/distributed-transactions) - How transactions work across regions
+- [Data Replication](/concepts/data-replication) - Understanding replication mechanics
+- [Resilience and Recovery](/concepts/resilience-recovery) - Multi-region backup strategies

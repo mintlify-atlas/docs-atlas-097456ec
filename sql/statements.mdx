@@ -1,0 +1,433 @@
+---
+title: SQL Statements
+description: Complete reference of SQL statements supported by CockroachDB
+---
+
+CockroachDB supports a comprehensive set of SQL statements for defining schemas, manipulating data, controlling access, and managing transactions.
+
+<Tip>
+  In the `cockroach sql` shell, use `\h [statement]` to get inline help about any statement.
+</Tip>
+
+## Data Definition Statements
+
+Data Definition Language (DDL) statements define and modify database schema objects.
+
+### Tables
+
+<ParamField path="CREATE TABLE" type="ddl">
+  Create a new table in a database.
+
+  ```sql
+  CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username STRING(50) NOT NULL,
+    email STRING UNIQUE,
+    created_at TIMESTAMPTZ DEFAULT now()
+  );
+  ```
+</ParamField>
+
+<ParamField path="ALTER TABLE" type="ddl">
+  Apply schema changes to a table.
+
+  ```sql
+  ALTER TABLE users ADD COLUMN last_login TIMESTAMPTZ;
+  ALTER TABLE users ALTER COLUMN email SET NOT NULL;
+  ALTER TABLE users DROP COLUMN bio;
+  ```
+</ParamField>
+
+<ParamField path="DROP TABLE" type="ddl">
+  Remove a table and all its data.
+
+  ```sql
+  DROP TABLE users;
+  DROP TABLE IF EXISTS old_data;
+  ```
+</ParamField>
+
+<ParamField path="TRUNCATE" type="ddl">
+  Delete all rows from specified tables.
+
+  ```sql
+  TRUNCATE TABLE logs;
+  TRUNCATE TABLE sessions, temp_data;
+  ```
+</ParamField>
+
+### Indexes
+
+<ParamField path="CREATE INDEX" type="ddl">
+  Create an index on a table to improve query performance.
+
+  ```sql
+  CREATE INDEX idx_email ON users(email);
+  CREATE INDEX idx_created ON orders(created_at DESC);
+  ```
+</ParamField>
+
+<ParamField path="ALTER INDEX" type="ddl">
+  Modify an existing index.
+
+  ```sql
+  ALTER INDEX idx_email RENAME TO idx_user_email;
+  ```
+</ParamField>
+
+<ParamField path="DROP INDEX" type="ddl">
+  Remove an index from a table.
+
+  ```sql
+  DROP INDEX idx_user_email;
+  ```
+</ParamField>
+
+### Databases and Schemas
+
+<ParamField path="CREATE DATABASE" type="ddl">
+  Create a new database.
+
+  ```sql
+  CREATE DATABASE myapp;
+  CREATE DATABASE IF NOT EXISTS staging;
+  ```
+</ParamField>
+
+<ParamField path="ALTER DATABASE" type="ddl">
+  Modify database configuration.
+
+  ```sql
+  ALTER DATABASE myapp CONFIGURE ZONE USING num_replicas = 3;
+  ```
+</ParamField>
+
+<ParamField path="DROP DATABASE" type="ddl">
+  Remove a database and all its objects.
+
+  ```sql
+  DROP DATABASE myapp CASCADE;
+  ```
+</ParamField>
+
+<ParamField path="CREATE SCHEMA" type="ddl">
+  Create a user-defined schema.
+
+  ```sql
+  CREATE SCHEMA analytics;
+  ```
+</ParamField>
+
+### Views
+
+<ParamField path="CREATE VIEW" type="ddl">
+  Create a view as a stored query.
+
+  ```sql
+  CREATE VIEW active_users AS
+    SELECT * FROM users WHERE last_login > now() - INTERVAL '30 days';
+  ```
+</ParamField>
+
+<ParamField path="CREATE MATERIALIZED VIEW" type="ddl">
+  Create a materialized view with stored results.
+
+  ```sql
+  CREATE MATERIALIZED VIEW daily_stats AS
+    SELECT date_trunc('day', created_at) AS day, count(*)
+    FROM orders
+    GROUP BY day;
+  ```
+</ParamField>
+
+<ParamField path="REFRESH" type="ddl">
+  Refresh the stored query results of a materialized view.
+
+  ```sql
+  REFRESH MATERIALIZED VIEW daily_stats;
+  ```
+</ParamField>
+
+## Data Manipulation Statements
+
+Data Manipulation Language (DML) statements query and modify data in tables.
+
+<Tabs>
+  <Tab title="SELECT">
+    Query data from tables.
+
+    ```sql
+    SELECT * FROM users WHERE email LIKE '%@example.com';
+
+    SELECT u.username, COUNT(o.id) AS order_count
+    FROM users u
+    LEFT JOIN orders o ON u.id = o.user_id
+    GROUP BY u.username
+    HAVING COUNT(o.id) > 5
+    ORDER BY order_count DESC
+    LIMIT 10;
+    ```
+  </Tab>
+
+  <Tab title="INSERT">
+    Insert new rows into a table.
+
+    ```sql
+    INSERT INTO users (username, email)
+    VALUES ('alice', 'alice@example.com');
+
+    INSERT INTO orders (user_id, total, status)
+    VALUES
+      (1, 99.99, 'pending'),
+      (2, 149.99, 'shipped');
+    ```
+  </Tab>
+
+  <Tab title="UPDATE">
+    Modify existing rows in a table.
+
+    ```sql
+    UPDATE users
+    SET last_login = now()
+    WHERE id = '7f9c24e8-3b12-4fef-91e0-56a2d5a246ec';
+
+    UPDATE orders
+    SET status = 'cancelled'
+    WHERE created_at < now() - INTERVAL '90 days'
+      AND status = 'pending';
+    ```
+  </Tab>
+
+  <Tab title="DELETE">
+    Remove rows from a table.
+
+    ```sql
+    DELETE FROM sessions WHERE expires_at < now();
+
+    DELETE FROM users WHERE id = '123e4567-e89b-12d3-a456-426614174000';
+    ```
+  </Tab>
+
+  <Tab title="UPSERT">
+    Insert rows or update them if they already exist.
+
+    ```sql
+    UPSERT INTO user_preferences (user_id, theme, language)
+    VALUES ('user123', 'dark', 'en');
+    ```
+  </Tab>
+</Tabs>
+
+### Advanced SELECT
+
+<ParamField path="SELECT FOR UPDATE" type="dml">
+  Lock rows for update to control concurrent access.
+
+  ```sql
+  BEGIN;
+  SELECT * FROM inventory WHERE sku = '8675309' FOR UPDATE;
+  UPDATE inventory SET quantity = quantity - 1 WHERE sku = '8675309';
+  COMMIT;
+  ```
+</ParamField>
+
+<ParamField path="WITH (CTE)" type="dml">
+  Use Common Table Expressions for complex queries.
+
+  ```sql
+  WITH regional_sales AS (
+    SELECT region, SUM(amount) AS total_sales
+    FROM orders
+    GROUP BY region
+  )
+  SELECT region, total_sales
+  FROM regional_sales
+  WHERE total_sales > 1000000;
+  ```
+</ParamField>
+
+## Data Control Statements
+
+Data Control Language (DCL) statements manage access permissions and security.
+
+<CodeGroup>
+```sql Users and Roles
+CREATE USER alice WITH PASSWORD 'secure123';
+CREATE ROLE developers;
+
+GRANT developers TO alice;
+
+ALTER USER alice WITH PASSWORD 'newsecure456';
+
+DROP USER IF EXISTS olduser;
+```
+
+```sql Privileges
+GRANT SELECT, INSERT ON TABLE orders TO developers;
+GRANT ALL ON DATABASE myapp TO admin_role;
+
+REVOKE INSERT ON TABLE users FROM developers;
+
+SHOW GRANTS ON TABLE orders;
+```
+</CodeGroup>
+
+## Transaction Control Statements
+
+Manage transaction boundaries and behavior.
+
+<Tabs>
+  <Tab title="BEGIN/COMMIT">
+    Start and commit transactions.
+
+    ```sql
+    BEGIN;
+    
+    INSERT INTO accounts (id, balance) VALUES (1, 1000);
+    INSERT INTO accounts (id, balance) VALUES (2, 500);
+    
+    COMMIT;
+    ```
+  </Tab>
+
+  <Tab title="ROLLBACK">
+    Abort a transaction and discard changes.
+
+    ```sql
+    BEGIN;
+    
+    UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+    UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+    
+    -- Something went wrong
+    ROLLBACK;
+    ```
+  </Tab>
+
+  <Tab title="SAVEPOINT">
+    Create nested transactions with savepoints.
+
+    ```sql
+    BEGIN;
+    
+    SAVEPOINT sp1;
+    UPDATE users SET status = 'active' WHERE id = 1;
+    
+    SAVEPOINT sp2;
+    DELETE FROM logs WHERE created_at < now() - INTERVAL '1 year';
+    
+    -- Rollback only the DELETE
+    ROLLBACK TO SAVEPOINT sp2;
+    
+    -- Release the first savepoint
+    RELEASE SAVEPOINT sp1;
+    
+    COMMIT;
+    ```
+  </Tab>
+
+  <Tab title="SET TRANSACTION">
+    Configure transaction properties.
+
+    ```sql
+    BEGIN PRIORITY HIGH;
+    
+    SET TRANSACTION PRIORITY LOW;
+    SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+    SET TRANSACTION READ ONLY;
+    ```
+  </Tab>
+</Tabs>
+
+## Query Planning Statements
+
+Analyze and optimize query execution.
+
+<ParamField path="EXPLAIN" type="query">
+  Show the execution plan for a query.
+
+  ```sql
+  EXPLAIN SELECT * FROM users WHERE email = 'alice@example.com';
+  ```
+</ParamField>
+
+<ParamField path="EXPLAIN ANALYZE" type="query">
+  Execute the query and show actual execution statistics.
+
+  ```sql
+  EXPLAIN ANALYZE SELECT u.username, COUNT(o.id)
+  FROM users u
+  JOIN orders o ON u.id = o.user_id
+  GROUP BY u.username;
+  ```
+</ParamField>
+
+<ParamField path="CREATE STATISTICS" type="query">
+  Generate statistics for the cost-based optimizer.
+
+  ```sql
+  CREATE STATISTICS stats_users FROM users;
+  ```
+</ParamField>
+
+## Show Statements
+
+Inspect database metadata and configuration.
+
+<CodeGroup>
+```sql Database Objects
+SHOW DATABASES;
+SHOW TABLES;
+SHOW COLUMNS FROM users;
+SHOW INDEXES FROM orders;
+SHOW CONSTRAINTS FROM users;
+```
+
+```sql Access Control
+SHOW USERS;
+SHOW ROLES;
+SHOW GRANTS ON DATABASE myapp;
+```
+
+```sql Configuration
+SHOW CLUSTER SETTING sql.defaults.default_int_size;
+SHOW SESSION VARIABLES;
+SHOW TRANSACTION PRIORITY;
+```
+</CodeGroup>
+
+## Job Management Statements
+
+Manage long-running operations like backups and schema changes.
+
+<ParamField path="SHOW JOBS" type="admin">
+  View information about jobs.
+
+  ```sql
+  SHOW JOBS;
+  SHOW JOBS WHEN COMPLETE (SELECT id FROM [SHOW JOBS] WHERE job_type = 'BACKUP');
+  ```
+</ParamField>
+
+<ParamField path="PAUSE/RESUME JOB" type="admin">
+  Pause or resume a running job.
+
+  ```sql
+  PAUSE JOB 123456789;
+  RESUME JOB 123456789;
+  ```
+</ParamField>
+
+<ParamField path="CANCEL JOB" type="admin">
+  Cancel a running job.
+
+  ```sql
+  CANCEL JOB 123456789;
+  ```
+</ParamField>
+
+## See Also
+
+- [Data Types](/sql/data-types)
+- [Functions and Operators](/sql/functions)
+- [Transactions](/sql/transactions)

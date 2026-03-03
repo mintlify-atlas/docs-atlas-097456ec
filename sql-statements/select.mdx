@@ -1,0 +1,175 @@
+---
+title: SELECT
+description: Read and process data in CockroachDB with selection queries.
+---
+
+Selection queries read and process data in CockroachDB. They are more general than simple `SELECT` clauses: they can group one or more selection clauses with set operations and can request a specific ordering or row limit.
+
+Selection queries can occur:
+- At the top level of a query, like other SQL statements
+- Between parentheses as a subquery
+- As operand to other statements that take tabular data as input (e.g., `INSERT`, `UPSERT`, `CREATE TABLE AS`, or `ALTER ... SPLIT AT`)
+
+## Syntax
+
+```sql
+[WITH common_table_expr [, ...]]
+select_clause
+[ORDER BY sort_clause]
+[LIMIT row_count]
+[OFFSET row_offset]
+[FOR {UPDATE | SHARE}]
+```
+
+## Parameters
+
+<ParamField path="common_table_expr" type="expression">
+  See Common Table Expressions.
+</ParamField>
+
+<ParamField path="select_clause" type="clause">
+  A valid selection clause, either simple or using set operations.
+</ParamField>
+
+<ParamField path="sort_clause" type="clause">
+  An optional `ORDER BY` clause for ordering query results.
+</ParamField>
+
+<ParamField path="limit_clause" type="clause">
+  An optional `LIMIT` clause for limiting the number of results.
+</ParamField>
+
+<ParamField path="offset_clause" type="clause">
+  An optional `OFFSET` clause for skipping rows.
+</ParamField>
+
+<ParamField path="for_locking_clause" type="clause">
+  The `FOR UPDATE` and `FOR SHARE` clauses are used to lock `SELECT` statements.
+</ParamField>
+
+## Selection clauses
+
+A selection clause defines tabular data. There are four specific syntax forms:
+
+- `SELECT` - Load or compute tabular data from various sources (most common)
+- `VALUES` - List tabular data by the client
+- `TABLE` - Load tabular data from the database
+- Set operations - Combine tabular data from two or more selection clauses
+
+### VALUES clause
+
+A `VALUES` clause defines tabular data by the expressions listed within parentheses. Each parenthesis group defines a single row in the resulting table.
+
+```sql
+VALUES (1, 2, 3), (4, 5, 6);
+```
+
+```
+  column1 | column2 | column3
+----------+---------+---------
+        1 |       2 |       3
+        4 |       5 |       6
+```
+
+### TABLE clause
+
+A `TABLE` clause reads tabular data from a specified table. The columns of the resulting table data are named after the schema of the table.
+
+`TABLE x` is equivalent to `SELECT * FROM x`.
+
+```sql
+CREATE TABLE employee_copy AS TABLE employee;
+```
+
+This statement copies the content from table `employee` into a new table.
+
+### SELECT clause
+
+The `SELECT` clause is the most common selection clause. It can:
+- Retrieve specific columns: `SELECT name, age FROM users`
+- Use `*` to select all columns: `SELECT * FROM users`
+- Apply filtering with `WHERE`: `SELECT * FROM users WHERE age > 18`
+- Perform joins: `SELECT * FROM users JOIN orders ON users.id = orders.user_id`
+- Aggregate data: `SELECT COUNT(*), city FROM users GROUP BY city`
+
+## Set operations
+
+Set operations combine data from two selection clauses.
+
+### UNION: Combine two queries
+
+`UNION` combines the results of two queries into one result.
+
+```sql
+SELECT name FROM accounts WHERE state_opened IN ('AZ', 'NY')
+UNION
+SELECT name FROM mortgages WHERE state_opened IN ('AZ', 'NY');
+```
+
+To show duplicate rows, use `ALL`:
+
+```sql
+SELECT name FROM accounts WHERE state_opened IN ('AZ', 'NY')
+UNION ALL
+SELECT name FROM mortgages WHERE state_opened IN ('AZ', 'NY');
+```
+
+### INTERSECT: Retrieve intersection of two queries
+
+`INTERSECT` selects only values that are present in both query operands.
+
+```sql
+SELECT name FROM accounts WHERE state_opened IN ('NJ', 'VA')
+INTERSECT
+SELECT name FROM mortgages;
+```
+
+### EXCEPT: Exclude one query's results from another
+
+`EXCEPT` selects values that are present in the first query operand but not the second.
+
+```sql
+SELECT name FROM mortgages
+EXCEPT
+SELECT name FROM accounts;
+```
+
+## Order results
+
+### Order by one column
+
+```sql
+SELECT * FROM accounts 
+  WHERE balance BETWEEN 350 AND 500
+  ORDER BY balance DESC;
+```
+
+### Order by multiple columns
+
+Columns are sorted in the order you list them:
+
+```sql
+SELECT * FROM accounts 
+  WHERE balance BETWEEN 350 AND 500
+  ORDER BY balance DESC, name ASC;
+```
+
+## Limit row count
+
+You can reduce the number of results with `LIMIT`:
+
+```sql
+SELECT id, name FROM accounts LIMIT 5;
+```
+
+## Row-level locking for concurrency control
+
+`SELECT FOR UPDATE` locks the rows returned by a selection query, preventing concurrent updates.
+
+## See also
+
+- Simple SELECT Clause
+- SELECT FOR UPDATE
+- Table Expressions
+- ORDER BY
+- LIMIT and OFFSET

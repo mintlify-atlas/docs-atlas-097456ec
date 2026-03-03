@@ -1,0 +1,566 @@
+---
+title: Security Best Practices
+description: Secure your CockroachDB cluster with authentication, encryption, authorization, and network security
+---
+
+Security is critical for any production database deployment. This guide covers essential security practices for CockroachDB clusters.
+
+## Security Overview
+
+CockroachDB provides multiple layers of security:
+
+- **Authentication**: Verify identity of users and nodes
+- **Encryption**: Protect data in transit and at rest
+- **Authorization**: Control access to database objects
+- **Network Security**: Restrict network access to the cluster
+- **Auditing**: Track database operations for compliance
+
+<Warning>
+By default, CockroachDB clusters are insecure. You must explicitly enable security features for production deployments.
+</Warning>
+
+## Authentication
+
+### TLS Certificates for Node Communication
+
+Secure inter-node communication with TLS 1.3:
+
+<Steps>
+
+<Step title="Create CA certificate">
+<CodeBlock>
+```bash
+# Create CA certificate and key
+cockroach cert create-ca \
+  --certs-dir=certs \
+  --ca-key=my-safe-directory/ca.key
+```
+</CodeBlock>
+
+<Info>
+Store the CA key (`ca.key`) in a secure location, separate from the certificates directory. You'll need it to create additional certificates.
+</Info>
+</Step>
+
+<Step title="Create node certificates">
+<CodeBlock>
+```bash
+# Create certificate for each node
+cockroach cert create-node \
+  localhost \
+  node1.example.com \
+  node1.internal \
+  *.example.com \
+  --certs-dir=certs \
+  --ca-key=my-safe-directory/ca.key
+
+# Copy certificates to each node
+scp certs/ca.crt certs/node.crt certs/node.key node1:/certs/
+```
+</CodeBlock>
+
+**Certificate must include:**
+- Node's hostname and IP address
+- Any DNS names or wildcards used to access the node
+- `localhost` if connecting locally
+</Step>
+
+<Step title="Create client certificates">
+<CodeBlock>
+```bash
+# Create client certificate for root user
+cockroach cert create-client \
+  root \
+  --certs-dir=certs \
+  --ca-key=my-safe-directory/ca.key
+
+# Create certificates for other users
+cockroach cert create-client \
+  myuser \
+  --certs-dir=certs \
+  --ca-key=my-safe-directory/ca.key
+```
+</CodeBlock>
+</Step>
+
+<Step title="Start secure cluster">
+<CodeBlock>
+```bash
+cockroach start \
+  --certs-dir=certs \
+  --advertise-addr=node1.example.com:26257 \
+  --join=node1.example.com:26257,node2.example.com:26257,node3.example.com:26257 \
+  --background
+```
+</CodeBlock>
+
+<Tip>
+Omit the `--insecure` flag to require TLS for all connections. This enables secure mode.
+</Tip>
+</Step>
+
+</Steps>
+
+### SQL User Authentication
+
+<Accordion title="Password authentication (SCRAM-SHA-256)">
+CockroachDB uses SCRAM-SHA-256 for secure password authentication:
+
+<CodeBlock>
+```sql
+-- Create user with password
+CREATE USER myuser WITH PASSWORD 'securepassword';
+
+-- Change user password
+ALTER USER myuser WITH PASSWORD 'newsecurepassword';
+
+-- Connect with password
+cockroach sql --url "postgresql://myuser:securepassword@node1.example.com:26257/mydb?sslmode=require"
+```
+</CodeBlock>
+
+**Password requirements:**
+- Enforce strong passwords in your application
+- Rotate passwords regularly
+- Store passwords securely (never in source code)
+- Use password managers for credential management
+</Accordion>
+
+<Accordion title="Certificate authentication">
+Use client certificates for authentication:
+
+<CodeBlock>
+```bash
+# Connect with client certificate
+cockroach sql \
+  --certs-dir=certs \
+  --host=node1.example.com:26257
+
+# Application connection with certificate
+postgresql://myuser@node1.example.com:26257/mydb?sslmode=require&sslcert=certs/client.myuser.crt&sslkey=certs/client.myuser.key&sslrootcert=certs/ca.crt
+```
+</CodeBlock>
+
+**Benefits:**
+- No passwords to manage
+- Strong cryptographic authentication
+- Suitable for service accounts and automation
+</Accordion>
+
+<Accordion title="Single Sign-On (SSO)">
+Integrate with enterprise identity providers:
+
+<CodeBlock>
+```sql
+-- Enable SSO for DB Console
+SET CLUSTER SETTING server.oidc_authentication.enabled = true;
+SET CLUSTER SETTING server.oidc_authentication.provider_url = 'https://accounts.google.com';
+SET CLUSTER SETTING server.oidc_authentication.client_id = 'your-client-id';
+SET CLUSTER SETTING server.oidc_authentication.client_secret = 'your-client-secret';
+SET CLUSTER SETTING server.oidc_authentication.redirect_url = 'https://cockroach.example.com:8080/oidc/v1/callback';
+```
+</CodeBlock>
+
+**Supported protocols:**
+- OpenID Connect (OIDC)
+- GSSAPI with Kerberos (Enterprise)
+- SAML (via third-party proxy)
+</Accordion>
+
+## Encryption
+
+### Encryption in Transit
+
+All network communication should use TLS:
+
+<Accordion title="Enable TLS for all connections">
+<CodeBlock>
+```bash
+# Clients must use sslmode=require or higher
+psql "postgresql://myuser@node1.example.com:26257/mydb?sslmode=require"
+
+# Verify TLS connection
+SHOW session_id;
+-- Check that connection uses encryption
+```
+</CodeBlock>
+
+**SSL modes:**
+- `disable`: No encryption (insecure, dev only)
+- `allow`: Opportunistic encryption (insecure)
+- `prefer`: Use encryption if available (insecure)
+- `require`: Require encryption (secure)
+- `verify-ca`: Require encryption and verify CA (more secure)
+- `verify-full`: Require encryption and verify hostname (most secure)
+
+<Warning>
+Always use `sslmode=require` or higher in production. Lower modes are vulnerable to man-in-the-middle attacks.
+</Warning>
+</Accordion>
+
+### Encryption at Rest
+
+<Accordion title="Infrastructure-level encryption">
+All major cloud providers offer encryption at rest:
+
+- **AWS**: Amazon EBS encryption with KMS
+- **GCP**: Persistent disk encryption with Cloud KMS
+- **Azure**: Managed disk encryption with Key Vault
+
+<CodeBlock>
+```bash
+# AWS example: Create encrypted EBS volume
+aws ec2 create-volume \
+  --size 100 \
+  --encrypted \
+  --kms-key-id arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012 \
+  --availability-zone us-east-1a
+```
+</CodeBlock>
+</Accordion>
+
+<Accordion title="CockroachDB Enterprise Encryption at Rest">
+CockroachDB Enterprise provides application-level encryption:
+
+<CodeBlock>
+```bash
+# Enable encryption at rest with key files
+cockroach start \
+  --certs-dir=certs \
+  --enterprise-encryption=path=cockroach-data,key=aes-128.key,old-key=plain \
+  --advertise-addr=node1.example.com:26257 \
+  --join=node1.example.com:26257,node2.example.com:26257,node3.example.com:26257
+```
+</CodeBlock>
+
+**Features:**
+- AES-128, AES-192, or AES-256 encryption
+- Key rotation support
+- Per-store encryption keys
+- Integration with key management systems
+</Accordion>
+
+## Authorization
+
+### Role-Based Access Control (RBAC)
+
+<Steps>
+
+<Step title="Create roles">
+<CodeBlock>
+```sql
+-- Create roles for different access levels
+CREATE ROLE readonly;
+CREATE ROLE readwrite;
+CREATE ROLE admin_role;
+
+-- Create users and assign roles
+CREATE USER analyst WITH PASSWORD 'password';
+GRANT readonly TO analyst;
+
+CREATE USER developer WITH PASSWORD 'password';
+GRANT readwrite TO developer;
+
+CREATE USER dba WITH PASSWORD 'password';
+GRANT admin_role TO dba;
+```
+</CodeBlock>
+</Step>
+
+<Step title="Grant privileges to roles">
+<CodeBlock>
+```sql
+-- Grant database-level privileges
+GRANT CONNECT ON DATABASE mydb TO readonly;
+GRANT CONNECT, CREATE ON DATABASE mydb TO readwrite;
+GRANT ALL ON DATABASE mydb TO admin_role;
+
+-- Grant table-level privileges
+GRANT SELECT ON TABLE users, orders TO readonly;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE users, orders TO readwrite;
+GRANT ALL ON TABLE users, orders TO admin_role;
+
+-- Grant schema-level privileges
+GRANT USAGE ON SCHEMA public TO readonly;
+GRANT USAGE, CREATE ON SCHEMA public TO readwrite;
+```
+</CodeBlock>
+</Step>
+
+<Step title="Implement least privilege">
+<CodeBlock>
+```sql
+-- Application service account (limited privileges)
+CREATE USER app_service WITH PASSWORD 'password';
+GRANT SELECT, INSERT, UPDATE ON TABLE orders TO app_service;
+GRANT SELECT ON TABLE products TO app_service;
+GRANT USAGE ON SCHEMA public TO app_service;
+
+-- Read-only replica user
+CREATE USER readonly_replica WITH PASSWORD 'password';
+GRANT SELECT ON DATABASE mydb TO readonly_replica;
+
+-- Backup service account
+CREATE USER backup_service WITH PASSWORD 'password';
+GRANT SYSTEM BACKUP TO backup_service;
+```
+</CodeBlock>
+
+<Info>
+Grant only the minimum privileges required for each user or service to function. This limits damage if credentials are compromised.
+</Info>
+</Step>
+
+</Steps>
+
+### Default Privileges
+
+Set privileges automatically for new objects:
+
+<CodeBlock>
+```sql
+-- Grant default privileges on future tables
+ALTER DEFAULT PRIVILEGES 
+  FOR ROLE developer 
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO readwrite;
+
+ALTER DEFAULT PRIVILEGES 
+  FOR ROLE developer 
+  GRANT SELECT ON TABLES TO readonly;
+
+-- Grant default privileges in specific schema
+ALTER DEFAULT PRIVILEGES 
+  IN SCHEMA analytics 
+  GRANT SELECT ON TABLES TO analyst_role;
+```
+</CodeBlock>
+
+## Network Security
+
+### IP Allowlisting
+
+<Accordion title="Configure host-based authentication">
+Restrict connections by IP address:
+
+<CodeBlock>
+```bash
+# Create HBA configuration file
+cat > hba.conf <<EOF
+# Allow local connections
+host all all 127.0.0.1/32 cert-password
+host all all ::1/128 cert-password
+
+# Allow specific application servers
+host all app_user 10.0.1.0/24 password
+host all app_user 10.0.2.0/24 password
+
+# Allow admin from office network
+host all admin 203.0.113.0/24 cert-password
+
+# Deny all other connections
+host all all all reject
+EOF
+
+# Start node with HBA config
+cockroach start \
+  --certs-dir=certs \
+  --accept-sql-without-tls \
+  --hba-conf=hba.conf
+```
+</CodeBlock>
+
+**HBA rules:**
+- Rules are evaluated in order (first match wins)
+- Use `cert-password` for certificate or password auth
+- Use `cert` for certificate-only auth
+- Use `password` for password-only auth
+- Use `reject` to explicitly deny
+</Accordion>
+
+### Firewall Configuration
+
+Restrict network access at the infrastructure level:
+
+<CodeBlock>
+```bash
+# AWS Security Group example
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-123456 \
+  --protocol tcp \
+  --port 26257 \
+  --source-group sg-app-servers  # Only from application servers
+
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-123456 \
+  --protocol tcp \
+  --port 8080 \
+  --cidr 203.0.113.0/24  # DB Console from office network only
+
+# Allow inter-node communication
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-123456 \
+  --protocol tcp \
+  --port 26257 \
+  --source-group sg-123456
+```
+</CodeBlock>
+
+**Ports to protect:**
+- `26257`: SQL and inter-node (PostgreSQL wire protocol)
+- `8080`: DB Console HTTP interface
+- `26258`: Node status and metrics
+
+### Private Network Connectivity
+
+<Accordion title="VPC Peering">
+Connect application VPC to database VPC:
+
+<CodeBlock>
+```bash
+# AWS VPC Peering
+aws ec2 create-vpc-peering-connection \
+  --vpc-id vpc-app \
+  --peer-vpc-id vpc-database
+
+# Update route tables
+aws ec2 create-route \
+  --route-table-id rtb-app \
+  --destination-cidr-block 10.1.0.0/16 \
+  --vpc-peering-connection-id pcx-123456
+```
+</CodeBlock>
+</Accordion>
+
+<Accordion title="AWS PrivateLink / GCP Private Service Connect">
+Private connectivity without VPC peering:
+
+- **AWS PrivateLink**: Expose CockroachDB through VPC endpoint
+- **GCP Private Service Connect**: Connect via private service connection
+- **Azure Private Link**: Use private endpoints
+
+**Benefits:**
+- No IP conflicts between VPCs
+- Simplified network management
+- Enhanced security
+</Accordion>
+
+## Audit Logging
+
+Track database operations for compliance and security:
+
+<CodeBlock>
+```sql
+-- Enable SQL audit logging for sensitive tables
+ALTER TABLE users EXPERIMENTAL_AUDIT SET READ WRITE;
+ALTER TABLE financial_records EXPERIMENTAL_AUDIT SET READ WRITE;
+
+-- Enable audit logging for entire database
+ALTER DATABASE mydb EXPERIMENTAL_AUDIT SET READ WRITE;
+
+-- View audit log settings
+SHOW EXPERIMENTAL_AUDIT FOR TABLE users;
+
+-- Disable audit logging
+ALTER TABLE users EXPERIMENTAL_AUDIT SET OFF;
+```
+</CodeBlock>
+
+### Audit Log Configuration
+
+<CodeBlock>
+```yaml
+# Configure audit log sinks in logging configuration
+sinks:
+  file-groups:
+    sensitive:
+      channels:
+        - SENSITIVE_ACCESS
+      dir: /var/log/cockroach/audit
+      max-file-size: 100mib
+      max-group-size: 1gib
+      file-defaults:
+        format: json
+        redactable: false
+```
+</CodeBlock>
+
+**What gets logged:**
+- All SQL statements affecting audited tables
+- User who executed the statement
+- Timestamp of execution
+- Source IP address
+- Application name
+
+## Security Best Practices
+
+<Accordion title="Deployment security">
+- Always use TLS in production (never `--insecure`)
+- Store CA keys offline, separate from certificates
+- Use separate certificates for each node (not wildcard)
+- Rotate certificates before expiration (monitor with `cockroach cert list`)
+- Enable certificate revocation checking (OCSP)
+</Accordion>
+
+<Accordion title="Access control">
+- Implement role-based access control (RBAC)
+- Use principle of least privilege
+- Create service accounts with minimal permissions
+- Disable the `root` user for regular operations
+- Require MFA for admin access to DB Console
+- Regularly audit user permissions and remove unused accounts
+</Accordion>
+
+<Accordion title="Network security">
+- Use private networks for database nodes
+- Restrict DB Console access to admin networks
+- Implement IP allowlisting via HBA or firewall
+- Use VPC peering or PrivateLink for application connectivity
+- Enable DDoS protection at infrastructure layer
+- Monitor unusual network traffic patterns
+</Accordion>
+
+<Accordion title="Data protection">
+- Enable encryption at rest (infrastructure or Enterprise)
+- Use encrypted backups for sensitive data
+- Implement data masking for non-production environments
+- Set up automated backup testing and validation
+- Store backups in separate regions/accounts
+- Enable object locking on backup storage
+</Accordion>
+
+<Accordion title="Monitoring and response">
+- Enable SQL audit logging for sensitive tables
+- Monitor failed authentication attempts
+- Set up alerts for security events
+- Implement log aggregation and SIEM integration
+- Conduct regular security assessments
+- Maintain incident response procedures
+- Test disaster recovery regularly
+</Accordion>
+
+## Compliance Considerations
+
+<Accordion title="GDPR / Data Privacy">
+- Use row-level TTL for data retention policies
+- Implement data masking for PII
+- Enable audit logging for access to personal data
+- Use geo-partitioning for data residency
+- Document data processing activities
+</Accordion>
+
+<Accordion title="SOC 2 / ISO 27001">
+- Enable comprehensive audit logging
+- Implement least privilege access
+- Encrypt data in transit and at rest
+- Regular security assessments and penetration testing
+- Maintain security policies and procedures
+</Accordion>
+
+<Accordion title="PCI DSS (for payment data)">
+- Use strong encryption (TLS 1.2+, AES-256)
+- Implement network segmentation
+- Enable audit logging for all data access
+- Regular vulnerability scanning
+- Restrict access to cardholder data
+- Use tokenization when possible
+</Accordion>

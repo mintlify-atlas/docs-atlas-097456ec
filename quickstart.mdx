@@ -1,80 +1,211 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get CockroachDB up and running in minutes with this quick start guide.
 ---
 
-## Get started in three steps
+This quickstart guide walks you through installing CockroachDB, starting a local cluster, and running your first SQL commands. You'll have a working CockroachDB cluster in just a few minutes.
 
-Get your documentation site running locally and make your first customization.
+## Before you begin
 
-### Step 1: Set up your local environment
+<Info>
+For production deployments, consider using [CockroachDB Cloud](https://cockroachlabs.cloud/signup) for a fully managed experience.
+</Info>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+This guide assumes you have basic familiarity with SQL databases and command-line interfaces.
+
+## Step 1: Install CockroachDB
+
+Choose your operating system and follow the installation instructions:
+
+<Tabs>
+  <Tab title="macOS">
+    Install CockroachDB using Homebrew:
+
+    ```bash
+    brew install cockroachdb/tap/cockroach
+    ```
+
+    Verify the installation:
+
+    ```bash
+    cockroach version
+    ```
+
+    For other installation methods, see [Install CockroachDB on Mac](/install-cockroachdb#mac).
+  </Tab>
+  
+  <Tab title="Linux">
+    Download and extract the CockroachDB archive:
+
+    ```bash
+    # Download the binary (replace {VERSION} and {ARCHITECTURE})
+    curl https://binaries.cockroachdb.com/cockroach-{VERSION}.linux-{ARCHITECTURE}.tgz | tar -xz
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    # Copy the binary to your PATH
+    sudo cp -i cockroach-{VERSION}.linux-{ARCHITECTURE}/cockroach /usr/local/bin/
+    ```
 
-### Step 2: Deploy your changes
+    Verify the installation:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```bash
+    cockroach version
+    ```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    For detailed instructions, see [Install CockroachDB on Linux](/install-cockroachdb#linux).
+  </Tab>
+  
+  <Tab title="Windows">
+    Download the executable from the [Releases page](https://www.cockroachlabs.com/docs/releases/) and extract it to a directory in your PATH.
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    Verify the installation in PowerShell:
 
-### Step 3: Go live
+    ```powershell
+    cockroach version
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    For detailed instructions, see [Install CockroachDB on Windows](/install-cockroachdb#windows).
+  </Tab>
+  
+  <Tab title="Docker">
+    Pull the CockroachDB Docker image:
 
-## Next steps
+    ```bash
+    docker pull cockroachdb/cockroach:latest-v25.3
+    ```
 
-Now that you have your docs running, explore these key features:
+    Verify the installation:
+
+    ```bash
+    docker run --rm cockroachdb/cockroach:latest-v25.3 version
+    ```
+  </Tab>
+</Tabs>
+
+## Step 2: Start a single-node cluster
+
+For quick testing and development, start a single-node cluster:
+
+```bash
+cockroach start-single-node --insecure --listen-addr=localhost
+```
+
+<Warning>
+The `--insecure` flag disables all security features. Only use this for local testing, never in production.
+</Warning>
+
+You'll see output indicating the cluster has started:
+
+```
+*
+* WARNING: RUNNING IN INSECURE MODE!
+*
+* - Your cluster is open for any client that can access localhost.
+* - Any user, even root, can log in without providing a password.
+* - Any user, connecting as root, can read or write any data in your cluster.
+*
+CockroachDB node starting at 2026-03-03
+```
+
+## Step 3: Use the SQL shell
+
+Open a new terminal and connect to your cluster using the built-in SQL client:
+
+```bash
+cockroach sql --insecure --host=localhost:26257
+```
+
+You'll see the SQL prompt:
+
+```
+root@localhost:26257/defaultdb>
+```
+
+## Step 4: Run your first SQL commands
+
+Let's create a database, a table, and insert some data:
+
+<Steps>
+  <Step title="Create a database">
+    ```sql
+    CREATE DATABASE bank;
+    ```
+  </Step>
+  
+  <Step title="Use the database">
+    ```sql
+    USE bank;
+    ```
+  </Step>
+  
+  <Step title="Create a table">
+    ```sql
+    CREATE TABLE accounts (
+      id INT PRIMARY KEY,
+      balance DECIMAL
+    );
+    ```
+  </Step>
+  
+  <Step title="Insert data">
+    ```sql
+    INSERT INTO accounts VALUES (1, 1000.50);
+    INSERT INTO accounts VALUES (2, 2500.75);
+    ```
+  </Step>
+  
+  <Step title="Query the data">
+    ```sql
+    SELECT * FROM accounts;
+    ```
+
+    You should see:
+
+    ```
+      id | balance
+    -----+---------
+       1 | 1000.50
+       2 | 2500.75
+    (2 rows)
+    ```
+  </Step>
+</Steps>
+
+## Step 5: Access the DB Console
+
+CockroachDB includes a web-based DB Console for monitoring your cluster:
+
+1. Open your browser and navigate to [http://localhost:8080](http://localhost:8080)
+2. Explore the cluster overview, metrics, and database information
+
+<Tip>
+The DB Console provides real-time insights into your cluster's health, performance, and resource usage.
+</Tip>
+
+## Step 6: Stop the cluster
+
+When you're done, stop the cluster by pressing `Ctrl+C` in the terminal where CockroachDB is running.
+
+To remove the data directory:
+
+```bash
+rm -rf cockroach-data/
+```
+
+## What's next?
+
+Now that you have CockroachDB running, explore these resources:
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Start a local cluster" icon="server" href="/start-local-cluster">
+    Run a multi-node cluster for testing replication and resilience
+  </Card>
+  <Card title="Build a sample app" icon="code" href="https://www.cockroachlabs.com/docs/stable/example-apps.html">
+    Connect your application to CockroachDB
+  </Card>
+  <Card title="Learn CockroachDB SQL" icon="book" href="https://www.cockroachlabs.com/docs/stable/learn-cockroachdb-sql.html">
+    Master the SQL syntax and features
+  </Card>
+  <Card title="Explore capabilities" icon="flask" href="https://www.cockroachlabs.com/docs/stable/demo-cockroachdb-resilience.html">
+    See fault tolerance and distributed features in action
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

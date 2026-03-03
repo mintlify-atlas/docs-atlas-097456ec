@@ -1,0 +1,526 @@
+---
+title: Authentication in CockroachDB Cloud
+description: Learn about authentication methods for CockroachDB Cloud at the organization and cluster levels.
+---
+
+CockroachDB Cloud supports authentication at two levels: organization-level access for administrative tasks and cluster-level access for SQL operations.
+
+## Authentication Overview
+
+Authentication in CockroachDB Cloud works at different levels:
+
+1. **Organization Level**: Access to Cloud Console, API, and `ccloud` CLI
+2. **Cluster Level**: SQL user authentication for database operations
+
+## Organization Authentication
+
+Authenticate to manage your CockroachDB Cloud organization through three interfaces.
+
+### Cloud Console Authentication
+
+Access the Cloud Console at [cockroachlabs.cloud](https://cockroachlabs.cloud).
+
+**Authentication Methods:**
+
+<Tabs>
+  <Tab title="Email and Password">
+    **Standard Login:**
+    
+    <Steps>
+      <Step title="Navigate to Login">
+        Go to [cockroachlabs.cloud](https://cockroachlabs.cloud)
+      </Step>
+      
+      <Step title="Enter Credentials">
+        1. Enter your email address
+        2. Enter your password
+        3. Click **Sign In**
+      </Step>
+      
+      <Step title="Multi-Factor Authentication">
+        If MFA is enabled, enter your verification code
+      </Step>
+    </Steps>
+  </Tab>
+  
+  <Tab title="Single Sign-On (SSO)">
+    **SSO Login (Recommended):**
+    
+    <Steps>
+      <Step title="Access SSO Login">
+        Go to your organization's SSO login URL or click **Sign in with SSO**
+      </Step>
+      
+      <Step title="Authenticate">
+        Authenticate through your identity provider:
+        - Google Workspace
+        - Microsoft Azure AD
+        - Okta
+        - Other SAML 2.0 providers
+      </Step>
+      
+      <Step title="Complete Login">
+        You'll be redirected to the Cloud Console
+      </Step>
+    </Steps>
+    
+    <Info>
+    SSO provides enhanced security and centralized user management. Organization Admins can configure SSO in organization settings.
+    </Info>
+  </Tab>
+  
+  <Tab title="GitHub">
+    **Sign in with GitHub:**
+    
+    1. Click **Sign in with GitHub**
+    2. Authorize CockroachDB Cloud
+    3. Access granted
+  </Tab>
+</Tabs>
+
+### `ccloud` CLI Authentication
+
+Authenticate the `ccloud` command-line tool to your organization.
+
+<Steps>
+  <Step title="Install ccloud">
+    Download and install the `ccloud` CLI:
+    
+    ```bash
+    # macOS
+    brew install cockroachdb/tap/ccloud
+    
+    # Linux
+    curl -L https://binaries.cockroachlabs.com/ccloud-latest.linux-amd64.tar.gz | tar -xz
+    ```
+  </Step>
+  
+  <Step title="Authenticate">
+    Run the login command:
+    
+    ```bash
+    ccloud auth login --org <organization-name>
+    ```
+    
+    This opens your browser for authentication.
+  </Step>
+  
+  <Step title="Complete Login">
+    1. Authenticate in your browser
+    2. Return to the terminal
+    3. `ccloud` is now authenticated
+  </Step>
+</Steps>
+
+**Headless Authentication:**
+
+For servers without a browser:
+
+```bash
+ccloud auth login --no-redirect --org <organization-name>
+```
+
+Copy the provided URL, authenticate on another machine, and enter the authorization code.
+
+### Cloud API Authentication
+
+Service accounts authenticate to the Cloud API using API keys.
+
+<Steps>
+  <Step title="Create Service Account">
+    1. Go to **Access Management** in Cloud Console
+    2. Click **Service Accounts** tab
+    3. Click **Create Service Account**
+    4. Name the account and assign roles
+  </Step>
+  
+  <Step title="Generate API Key">
+    1. Select the service account
+    2. Click **Create API Key**
+    3. Copy the API key (shown only once)
+    4. Store securely
+  </Step>
+  
+  <Step title="Use API Key">
+    Include the API key in API requests:
+    
+    ```bash
+    curl -X GET \
+      https://cockroachlabs.cloud/api/v1/clusters \
+      -H "Authorization: Bearer {api-key}"
+    ```
+  </Step>
+</Steps>
+
+## SQL User Authentication
+
+Authenticate to CockroachDB clusters to execute SQL statements.
+
+### Create SQL Users
+
+<Steps>
+  <Step title="Navigate to SQL Users">
+    1. Select your cluster
+    2. Click **SQL Users** in the navigation
+  </Step>
+  
+  <Step title="Add User">
+    1. Click **Add User**
+    2. Enter username (lowercase, alphanumeric, hyphens)
+    3. Generate or enter a strong password
+    4. Click **Create**
+  </Step>
+  
+  <Step title="Save Credentials">
+    Save the password securely - it won't be shown again
+  </Step>
+</Steps>
+
+<Warning>
+**Password Requirements:**
+- Minimum 12 characters
+- Include uppercase and lowercase letters
+- Include numbers and special characters
+- Avoid common passwords or patterns
+</Warning>
+
+### SQL Authentication Methods
+
+<Tabs>
+  <Tab title="Username and Password">
+    **Standard SQL Authentication:**
+    
+    Connect using username and password in the connection string:
+    
+    ```bash
+    cockroach sql --url "postgresql://myuser:password@cluster-name.cloud.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full"
+    ```
+    
+    Or provide credentials interactively:
+    
+    ```bash
+    cockroach sql --url "postgresql://cluster-name.cloud.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full" --user myuser
+    Password: [enter password]
+    ```
+  </Tab>
+  
+  <Tab title="Client Certificates">
+    **PKI Certificate Authentication (Advanced only):**
+    
+    Use client certificates for passwordless authentication:
+    
+    <Steps>
+      <Step title="Generate Certificate">
+        Create a client certificate signed by the cluster's CA:
+        
+        ```bash
+        cockroach cert create-client {username} \
+          --certs-dir=certs \
+          --ca-key=ca.key
+        ```
+      </Step>
+      
+      <Step title="Connect with Certificate">
+        Use certificate files in connection:
+        
+        ```bash
+        cockroach sql --url "postgresql://myuser@cluster-name.cloud.cockroachlabs.cloud:26257/defaultdb?sslcert=client.myuser.crt&sslkey=client.myuser.key&sslrootcert=ca.crt&sslmode=verify-full"
+        ```
+      </Step>
+    </Steps>
+    
+    <Info>
+    Client certificate authentication is only available for CockroachDB Advanced clusters.
+    </Info>
+  </Tab>
+  
+  <Tab title="SSO for SQL">
+    **Cluster SSO (Advanced only):**
+    
+    Authenticate to clusters using organization SSO credentials:
+    
+    <Steps>
+      <Step title="Create SSO SQL User">
+        The SQL username must match the format `sso_{email_prefix}`:
+        
+        ```sql
+        -- For user alice@company.com
+        CREATE USER sso_alice;
+        GRANT admin TO sso_alice;
+        ```
+      </Step>
+      
+      <Step title="Connect with SSO">
+        Use the `--sso` flag:
+        
+        ```bash
+        ccloud cluster sql --sso {cluster-name}
+        ```
+      </Step>
+      
+      <Step title="Authenticate">
+        Your browser opens for SSO authentication
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+### Connection Security
+
+CockroachDB Cloud enforces secure connections:
+
+**SSL/TLS Requirements:**
+- Connections must use TLS encryption
+- `sslmode=verify-full` required for production
+- CA certificate validates server identity
+
+**SSL Mode Settings:**
+
+| Mode | Encryption | Verification | Use Case |
+|------|------------|--------------|----------|
+| `require` | Yes | No | Testing only (not recommended) |
+| `verify-full` | Yes | Yes | **Production (required)** |
+
+**Download CA Certificate:**
+
+Get the cluster's CA certificate from the Connect dialog:
+
+```bash
+mkdir -p ~/.postgresql
+curl --create-dirs -o ~/.postgresql/root.crt \
+  'https://cockroachlabs.cloud/clusters/{cluster-id}/cert'
+```
+
+## Manage SQL Users
+
+Perform common SQL user management tasks.
+
+### Reset Password
+
+Only Organization Admins and Cluster Admins can reset passwords:
+
+<Steps>
+  <Step title="Access SQL Users">
+    Navigate to cluster's **SQL Users** page
+  </Step>
+  
+  <Step title="Reset Password">
+    1. Click the user's action menu (•••)
+    2. Select **Reset password**
+    3. Generate or enter new password
+    4. Click **Update**
+  </Step>
+  
+  <Step title="Distribute New Credentials">
+    Securely share the new password with the user
+  </Step>
+</Steps>
+
+### Grant SQL Privileges
+
+Control what SQL users can do:
+
+```sql
+-- Grant database access
+GRANT ALL ON DATABASE mydb TO myuser;
+
+-- Grant table access
+GRANT SELECT, INSERT ON TABLE mytable TO myuser;
+
+-- Grant admin privileges
+GRANT admin TO myuser;
+
+-- Create read-only user
+CREATE USER readonly;
+GRANT SELECT ON DATABASE mydb TO readonly;
+```
+
+### Delete SQL User
+
+<Steps>
+  <Step title="Revoke Privileges">
+    Remove the user's privileges:
+    
+    ```sql
+    REVOKE ALL ON DATABASE mydb FROM myuser;
+    ```
+  </Step>
+  
+  <Step title="Drop User">
+    Delete the user:
+    
+    ```sql
+    DROP USER myuser;
+    ```
+    
+    Or use the Cloud Console:
+    1. Go to **SQL Users** page
+    2. Click action menu for user
+    3. Select **Delete user**
+  </Step>
+</Steps>
+
+## Multi-Factor Authentication
+
+Enable MFA for enhanced organization account security.
+
+<Steps>
+  <Step title="Access Account Settings">
+    Click your profile icon > **Account Settings**
+  </Step>
+  
+  <Step title="Enable MFA">
+    1. Go to **Security** tab
+    2. Click **Enable MFA**
+    3. Scan QR code with authenticator app
+    4. Enter verification code
+    5. Save recovery codes
+  </Step>
+  
+  <Step title="Login with MFA">
+    Future logins require:
+    1. Username and password
+    2. MFA verification code
+  </Step>
+</Steps>
+
+**Supported Authenticator Apps:**
+- Google Authenticator
+- Microsoft Authenticator
+- Authy
+- 1Password
+- Other TOTP-compatible apps
+
+## Configure Organization SSO
+
+Organization Admins can configure SSO for all users.
+
+<Steps>
+  <Step title="Access SSO Settings">
+    1. Go to **Organization Settings**
+    2. Click **SSO** tab
+  </Step>
+  
+  <Step title="Configure Identity Provider">
+    1. Select your IdP type (SAML 2.0)
+    2. Enter IdP metadata URL or upload metadata XML
+    3. Configure attribute mappings
+  </Step>
+  
+  <Step title="Test SSO">
+    1. Click **Test SSO**
+    2. Verify authentication flow
+    3. Check user attributes
+  </Step>
+  
+  <Step title="Enable SSO">
+    1. Toggle **SSO Enabled**
+    2. Optionally enforce SSO (disable password login)
+  </Step>
+</Steps>
+
+**SSO Benefits:**
+- Centralized user management
+- Automated provisioning/deprovisioning
+- Enhanced security with IdP policies
+- Simplified user experience
+
+## Security Best Practices
+
+### Organization Authentication
+
+<Card title="Recommendations" icon="shield">
+  - **Enable SSO**: Centralize authentication
+  - **Require MFA**: Add extra security layer
+  - **Use Service Accounts**: For API access, not personal accounts
+  - **Rotate API Keys**: Regularly update service account keys
+  - **Review Access**: Audit user access quarterly
+</Card>
+
+### SQL User Security
+
+<Card title="Best Practices" icon="lock">
+  - **Strong Passwords**: Minimum 12 characters, complex
+  - **Least Privilege**: Grant only necessary permissions
+  - **Separate Users**: Different users for different applications
+  - **Regular Audits**: Review user list and privileges
+  - **Use Certificates**: For Advanced clusters when possible
+</Card>
+
+### Connection Security
+
+<Card title="Secure Connections" icon="plug">
+  - **Always use TLS**: Never disable SSL/TLS
+  - **Verify Server**: Use `sslmode=verify-full`
+  - **Secure Credentials**: Use environment variables, not hard-coded
+  - **Rotate Passwords**: Change passwords regularly
+  - **Monitor Connections**: Track unusual access patterns
+</Card>
+
+## Troubleshooting Authentication
+
+### Cannot Log into Cloud Console
+
+**Issue**: Login fails or times out
+
+**Solutions**:
+1. Verify email and password are correct
+2. Check if SSO is enforced for your organization
+3. Clear browser cache and cookies
+4. Try different browser
+5. Reset password if forgotten
+6. Contact Organization Admin
+
+### SQL Connection Refused
+
+**Issue**: Cannot connect to cluster
+
+**Solutions**:
+1. Check IP allowlist includes your IP
+2. Verify SQL username and password
+3. Confirm `sslmode=verify-full` is set
+4. Download CA certificate
+5. Check network connectivity
+6. Verify cluster is running
+
+### Certificate Verification Failed
+
+**Issue**: SSL/TLS verification fails
+
+**Solutions**:
+1. Download latest CA certificate
+2. Verify certificate path in connection string
+3. Check certificate hasn't expired
+4. Ensure `sslmode=verify-full` is used
+5. Verify hostname matches certificate
+
+### API Authentication Failed
+
+**Issue**: API key not working
+
+**Solutions**:
+1. Verify API key is correct (no extra spaces)
+2. Check service account hasn't been deleted
+3. Confirm service account has necessary roles
+4. Regenerate API key if compromised
+5. Check API key hasn't been revoked
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authorization" icon="user-shield" href="/cloud/authorization">
+    Learn about roles and permissions
+  </Card>
+  
+  <Card title="Connect to Cluster" icon="plug" href="/cloud/connect-to-cluster">
+    Connect your applications
+  </Card>
+  
+  <Card title="Network Security" icon="shield" href="/cloud/network-security">
+    Configure network authorization
+  </Card>
+  
+  <Card title="Compliance" icon="certificate" href="/cloud/compliance">
+    Security compliance and certifications
+  </Card>
+</CardGroup>

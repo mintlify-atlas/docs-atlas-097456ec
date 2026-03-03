@@ -1,0 +1,272 @@
+---
+title: REVOKE
+description: Revoke privileges from users and roles with the REVOKE statement.
+---
+
+The `REVOKE` statement revokes privileges from users and/or roles. For the list of privileges that can be granted to and revoked from users and roles, see `GRANT`.
+
+You can use `REVOKE` to directly revoke privileges from a role or user, or you can revoke membership to an existing role, which effectively revokes that role's privileges.
+
+## Syntax
+
+```sql
+REVOKE {ALL [PRIVILEGES] | privilege_list}
+  ON {DATABASE | SCHEMA | TABLE | TYPE | FUNCTION | EXTERNAL CONNECTION} target [, ...]
+  FROM role_spec [, ...]
+```
+
+```sql
+REVOKE {role_name [, ...]} FROM {role_spec [, ...]}
+```
+
+## Parameters
+
+<ParamField path="ALL | ALL PRIVILEGES" type="keyword">
+  Revoke all privileges.
+</ParamField>
+
+<ParamField path="privilege_list" type="list">
+  A comma-separated list of privileges to revoke.
+  
+  Supported privileges include:
+  - `SELECT` - Read data from a table
+  - `INSERT` - Insert data into a table
+  - `UPDATE` - Update data in a table
+  - `DELETE` - Delete data from a table
+  - `CREATE` - Create objects in a database or schema
+  - `DROP` - Drop objects from a database
+  - `GRANT` - Grant privileges to other users
+  - `USAGE` - Use a schema or type
+  - `EXECUTE` - Execute a function
+  - `ZONECONFIG` - Modify replication zones
+  - `CONNECT` - Connect to a database
+</ParamField>
+
+<ParamField path="target" type="identifier">
+  A comma-separated list of database, table, sequence, or function names. The list should be preceded by the object type (e.g., `DATABASE mydatabase`).
+</ParamField>
+
+<ParamField path="ALL SEQUENCES IN SCHEMA" type="clause">
+  Revoke privileges on all sequences in a schema or list of schemas.
+</ParamField>
+
+<ParamField path="ALL TABLES IN SCHEMA" type="clause">
+  Revoke privileges on all tables and sequences in a schema or list of schemas.
+</ParamField>
+
+<ParamField path="ALL FUNCTIONS IN SCHEMA" type="clause">
+  Revoke privileges on all user-defined functions in a schema or list of schemas.
+</ParamField>
+
+<ParamField path="role_spec" type="identifier">
+  A comma-separated list of roles.
+</ParamField>
+
+## Required privileges
+
+- To revoke privileges, user revoking privileges must have the `GRANT` privilege on the target database, schema, table, or user-defined type. In addition to the `GRANT` privilege, the user revoking privileges must have the privilege being revoked on the target object. For example, a user revoking the `SELECT` privilege on a table to another user must have the `GRANT` and `SELECT` privileges on that table.
+
+- To revoke role membership, the user revoking role membership must be a role admin (i.e., members with the `WITH ADMIN OPTION`) or a member of the `admin` role. To remove membership to the `admin` role, the user must have `WITH ADMIN OPTION` on the `admin` role.
+
+## Considerations
+
+- The `root` user cannot be revoked from the `admin` role
+
+## Examples
+
+### Revoke privileges on databases
+
+```sql
+CREATE USER max WITH PASSWORD 'roach';
+```
+
+```sql
+GRANT CREATE ON DATABASE movr TO max;
+```
+
+```sql
+SHOW GRANTS ON DATABASE movr;
+```
+
+```
+  database_name | grantee | privilege_type | is_grantable
+----------------+---------+----------------+---------------
+  movr          | admin   | ALL            |      t
+  movr          | max     | CREATE         |      f
+  movr          | root    | ALL            |      t
+```
+
+```sql
+REVOKE CREATE ON DATABASE movr FROM max;
+```
+
+```sql
+SHOW GRANTS ON DATABASE movr;
+```
+
+```
+  database_name | grantee | privilege_type | is_grantable
+----------------+---------+----------------+---------------
+  movr          | admin   | ALL            |      t
+  movr          | root    | ALL            |      t
+```
+
+<Info>
+Any tables that previously inherited the database-level privileges retain the privileges.
+</Info>
+
+### Revoke privileges on specific tables
+
+```sql
+GRANT ALL ON TABLE rides TO max;
+```
+
+```sql
+SHOW GRANTS ON TABLE rides;
+```
+
+```
+  database_name | schema_name | table_name | grantee | privilege_type | is_grantable
+----------------+-------------+------------+---------+----------------+---------------
+  movr          | public      | rides      | admin   | ALL            |      t
+  movr          | public      | rides      | max     | ALL            |      f
+  movr          | public      | rides      | root    | ALL            |      t
+```
+
+```sql
+REVOKE ALL ON TABLE rides FROM max;
+```
+
+```sql
+SHOW GRANTS ON TABLE rides;
+```
+
+```
+  database_name | schema_name | table_name | grantee | privilege_type | is_grantable
+----------------+-------------+------------+---------+----------------+---------------
+  movr          | public      | rides      | admin   | ALL            |      t
+  movr          | public      | rides      | root    | ALL            |      t
+```
+
+### Revoke privileges on all tables in a schema
+
+```sql
+GRANT ALL ON TABLE rides, users TO max;
+```
+
+```sql
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM max;
+```
+
+This is equivalent to:
+
+```sql
+REVOKE ALL ON movr.public.* FROM max;
+```
+
+### Revoke system-level privileges
+
+```sql
+GRANT SYSTEM MODIFYCLUSTERSETTING TO max;
+```
+
+```sql
+SHOW SYSTEM GRANTS FOR max;
+```
+
+```
+  grantee | privilege_type  | is_grantable
+----------+-----------------+---------------
+  max     | MODIFYCLUSTERSETTING |      f
+```
+
+```sql
+REVOKE SYSTEM MODIFYCLUSTERSETTING FROM max;
+```
+
+```sql
+SHOW SYSTEM GRANTS FOR max;
+```
+
+```
+  grantee | privilege_type | is_grantable
+----------+----------------+---------------
+(0 rows)
+```
+
+### Revoke role membership
+
+```sql
+CREATE ROLE developer WITH CREATEDB;
+```
+
+```sql
+CREATE USER abbey WITH PASSWORD 'lincoln';
+```
+
+```sql
+GRANT developer TO abbey;
+```
+
+```sql
+SHOW GRANTS ON ROLE developer;
+```
+
+```
+  role_name | member | is_admin
+------------+--------+-----------
+  developer | abbey  |  false
+```
+
+```sql
+REVOKE developer FROM abbey;
+```
+
+```sql
+SHOW GRANTS ON ROLE developer;
+```
+
+```
+  role_name | member | is_admin
+------------+--------+-----------
+(0 rows)
+```
+
+### Revoke the admin option
+
+```sql
+GRANT developer TO abbey WITH ADMIN OPTION;
+```
+
+```sql
+SHOW GRANTS ON ROLE developer;
+```
+
+```
+  role_name | member | is_admin
+------------+--------+-----------
+  developer | abbey  |   true
+```
+
+```sql
+REVOKE ADMIN OPTION FOR developer FROM abbey;
+```
+
+```sql
+SHOW GRANTS ON ROLE developer;
+```
+
+```
+  role_name | member | is_admin
+------------+--------+-----------
+  developer | abbey  |  false
+```
+
+## See also
+
+- GRANT
+- SHOW GRANTS
+- CREATE ROLE
+- ALTER ROLE
+- DROP ROLE
+- Privileges

@@ -1,0 +1,246 @@
+---
+title: Deploy on CockroachDB Cloud
+description: Get started with CockroachDB Cloud using the ccloud CLI to create and manage serverless and advanced clusters
+---
+
+CockroachDB Cloud provides fully managed database clusters. You can create serverless or advanced clusters using the `ccloud` CLI or the web console.
+
+## Install ccloud CLI
+
+The `ccloud` CLI allows you to create, manage, and connect to CockroachDB Cloud clusters from the command line.
+
+<Steps>
+  <Step title="Download and install ccloud">
+    Download the appropriate version for your operating system and add it to your PATH.
+  </Step>
+
+  <Step title="Log in to CockroachDB Cloud">
+    Open a browser window to authenticate:
+
+    ```bash
+    ccloud auth login
+    ```
+
+    If you're a member of multiple organizations, specify your organization:
+
+    ```bash
+    ccloud auth login --org {organization-label}
+    ```
+
+    For headless servers, use the `--no-redirect` flag:
+
+    ```bash
+    ccloud auth login --no-redirect
+    ```
+  </Step>
+</Steps>
+
+## Quick start with ccloud quickstart
+
+The fastest way to get started is using the interactive quickstart command:
+
+```bash
+ccloud quickstart
+```
+
+This command guides you through:
+- Logging in to CockroachDB Cloud
+- Creating a new serverless cluster
+- Connecting to your cluster
+
+<Note>
+  The quickstart command creates a CockroachDB Serverless cluster in the default cloud provider (GCP) and the closest region.
+</Note>
+
+## Create a serverless cluster
+
+<Tabs>
+  <Tab title="Default configuration">
+    Create a serverless cluster with default settings:
+
+    ```bash
+    ccloud cluster create
+    ```
+
+    This creates a cluster with:
+    - Cloud provider: GCP
+    - Region: Closest to your location
+    - Auto-generated cluster name
+    - Spend limit: $0 (free tier)
+  </Tab>
+
+  <Tab title="Custom configuration">
+    Specify custom settings:
+
+    ```bash
+    ccloud cluster create serverless my-cluster us-central1 --cloud GCP --spend-limit 0
+    ```
+
+    Replace:
+    - `my-cluster` - Your cluster name
+    - `us-central1` - Desired region
+    - `--cloud` - Cloud provider (GCP, AWS, or AZURE)
+    - `--spend-limit` - Monthly spend limit in dollars
+  </Tab>
+</Tabs>
+
+## Create an advanced cluster
+
+For production workloads, create a CockroachDB Advanced cluster:
+
+```bash
+ccloud cluster create dedicated my-cluster us-central1:3 --cloud GCP --vcpus 4 --storage-gib 110
+```
+
+<CodeGroup>
+  ```bash Single-region
+  ccloud cluster create dedicated my-cluster us-central1:3 \
+    --cloud GCP \
+    --vcpus 4 \
+    --storage-gib 110
+  ```
+
+  ```bash Multi-region
+  ccloud cluster create dedicated my-cluster \
+    us-central1:8 \
+    us-west2:4 \
+    --cloud GCP \
+    --vcpus 4 \
+    --storage-gib 110
+  ```
+</CodeGroup>
+
+<Info>
+  For optimal performance, configure the same number of nodes in each region.
+</Info>
+
+## Configure IP allowlist
+
+For Advanced clusters, you must configure an IP allowlist to allow network connections:
+
+<Steps>
+  <Step title="Create an allowlist entry">
+    Allow connections from a specific IP address:
+
+    ```bash
+    ccloud cluster networking allowlist create my-cluster 1.1.1.1/32 --sql --ui
+    ```
+
+    This allows:
+    - `--sql` - CockroachDB SQL shell connections
+    - `--ui` - DB Console access
+  </Step>
+
+  <Step title="List allowlist entries">
+    View all IP allowlist entries:
+
+    ```bash
+    ccloud cluster networking allowlist list my-cluster
+    ```
+  </Step>
+
+  <Step title="Update an entry">
+    Add a descriptive name:
+
+    ```bash
+    ccloud cluster networking allowlist update my-cluster 1.1.1.1/32 --name home
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Use CIDR notation for IP ranges. For a single IP address, use `/32` (e.g., `1.1.1.1/32`).
+</Warning>
+
+## Connect to your cluster
+
+### Using the SQL client
+
+Connect directly using the `ccloud cluster sql` command:
+
+```bash
+ccloud cluster sql my-cluster
+```
+
+If no SQL user exists, you'll be prompted to create one.
+
+### Using SSO authentication
+
+Connect using single sign-on:
+
+```bash
+ccloud cluster sql --sso my-cluster
+```
+
+For remote machines:
+
+```bash
+ccloud cluster sql --sso --no-redirect my-cluster
+```
+
+### Get connection information
+
+Retrieve the connection URL:
+
+```bash
+ccloud cluster sql --connection-url my-cluster
+```
+
+Get individual connection parameters:
+
+```bash
+ccloud cluster sql --connection-params my-cluster
+```
+
+## Manage SQL users
+
+Create a new SQL user with admin privileges:
+
+```bash
+ccloud cluster user create my-cluster maxroach
+```
+
+You'll be prompted to set a password. Admin users have full privileges for all databases and tables.
+
+## Manage clusters
+
+<CardGroup cols={2}>
+  <Card title="List clusters" icon="list">
+    ```bash
+    ccloud cluster list
+    ```
+    View all clusters in your organization with details like plan type, state, and version.
+  </Card>
+
+  <Card title="View cluster info" icon="info">
+    ```bash
+    ccloud cluster info my-cluster
+    ```
+    Get detailed information about a specific cluster.
+  </Card>
+
+  <Card title="Delete cluster" icon="trash">
+    ```bash
+    ccloud cluster delete my-cluster
+    ```
+    Permanently delete a cluster. Cannot be undone.
+  </Card>
+
+  <Card title="Disable telemetry" icon="shield">
+    ```bash
+    ccloud settings set --disable-telemetry=true
+    ```
+    Opt out of anonymized telemetry collection.
+  </Card>
+</CardGroup>
+
+<Warning>
+  You cannot delete a cluster while it's in `CLUSTER_STATE_CREATING` status. Wait until it reaches `CLUSTER_STATE_CREATED`.
+</Warning>
+
+## Next steps
+
+- Learn about [connection pooling](/essentials/connection-pooling) for optimal performance
+- Set up [monitoring and alerting](/operations/monitoring) for your cluster
+- Configure [backup and restore](/operations/backup-restore) strategies
+- Explore [security best practices](/security/authentication)

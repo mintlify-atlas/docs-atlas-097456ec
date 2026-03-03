@@ -1,0 +1,383 @@
+---
+title: Cluster Management API
+description: Create, configure, and manage CockroachDB Cloud clusters programmatically
+---
+
+The Cluster Management API enables you to create, update, monitor, and delete CockroachDB Cloud clusters across all plan types: Basic, Standard, and Advanced.
+
+## List All Clusters
+
+Retrieve all active clusters within your organization.
+
+```bash GET /v1/clusters
+curl --request GET \
+  --url https://cockroachlabs.cloud/api/v1/clusters \
+  --header "Authorization: Bearer {secret_key}"
+```
+
+### Query Parameters
+
+<ParamField query="show_inactive" type="boolean" default="false">
+  Include deleted or failed clusters in the response
+</ParamField>
+
+### Response
+
+<ResponseField name="clusters" type="array">
+  Array of cluster objects
+  
+  <Expandable title="Cluster Object">
+    <ResponseField name="id" type="string">
+      Unique identifier for the cluster
+    </ResponseField>
+    
+    <ResponseField name="name" type="string">
+      Cluster name (6-20 characters, lowercase letters, numbers, dashes)
+    </ResponseField>
+    
+    <ResponseField name="plan" type="enum">
+      Cluster plan type: `BASIC`, `STANDARD`, or `ADVANCED`
+    </ResponseField>
+    
+    <ResponseField name="provider" type="enum">
+      Cloud provider: `AWS`, `GCP`, or `AZURE`
+    </ResponseField>
+    
+    <ResponseField name="state" type="enum">
+      Current cluster state: `CREATING`, `CREATED`, `DELETED`, `LOCKED`
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json Response Example
+{
+  "clusters": [
+    {
+      "id": "f9b6f5e4-3c2b-4a1d-9e8f-7c6b5a4d3e2f",
+      "name": "production-cluster",
+      "plan": "STANDARD",
+      "provider": "GCP",
+      "state": "CREATED",
+      "created_at": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+## Get Cluster Details
+
+Retrieve detailed information about a specific cluster.
+
+```bash GET /v1/clusters/{cluster_id}
+curl --request GET \
+  --url https://cockroachlabs.cloud/api/v1/clusters/{cluster_id} \
+  --header "Authorization: Bearer {secret_key}"
+```
+
+<Note>
+The cluster ID used in the Cloud API is different from the routing ID used when connecting to clusters.
+</Note>
+
+## Create a Basic Cluster
+
+Create a new CockroachDB Basic cluster with usage-based pricing.
+
+```bash POST /v1/clusters
+curl --request POST \
+  --url https://cockroachlabs.cloud/api/v1/clusters \
+  --header "Authorization: Bearer {secret_key}" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "name": "basic-test",
+    "provider": "GCP",
+    "plan": "BASIC",
+    "spec": {
+      "serverless": {
+        "regions": ["us-central1"]
+      }
+    }
+  }'
+```
+
+### Request Parameters
+
+<ParamField body="name" type="string" required>
+  Cluster name (6-20 characters, lowercase letters, numbers, dashes)
+</ParamField>
+
+<ParamField body="provider" type="enum" required>
+  Cloud provider: `AWS`, `GCP`, or `AZURE`
+</ParamField>
+
+<ParamField body="plan" type="enum" required>
+  Set to `BASIC` for a Basic cluster
+</ParamField>
+
+<ParamField body="spec.serverless.regions" type="array" required>
+  Array of region names (e.g., `["us-central1"]`)
+</ParamField>
+
+<ParamField body="spec.serverless.usage_limits.storage_mib_limit" type="string">
+  Maximum storage in MiB (optional)
+</ParamField>
+
+<ParamField body="spec.serverless.usage_limits.request_unit_limit" type="string">
+  Maximum request units per month (optional)
+</ParamField>
+
+## Create a Standard Cluster
+
+Create a CockroachDB Standard cluster with provisioned capacity.
+
+```bash POST /v1/clusters
+curl --request POST \
+  --url https://cockroachlabs.cloud/api/v1/clusters \
+  --header "Authorization: Bearer {secret_key}" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "name": "standard-cluster",
+    "provider": "GCP",
+    "plan": "STANDARD",
+    "spec": {
+      "serverless": {
+        "regions": ["us-central1"],
+        "usage_limits": {
+          "provisioned_virtual_cpus": "2"
+        }
+      }
+    }
+  }'
+```
+
+### Request Parameters
+
+<ParamField body="name" type="string" required>
+  Cluster name
+</ParamField>
+
+<ParamField body="provider" type="enum" required>
+  Cloud provider: `AWS`, `GCP`, or `AZURE`
+</ParamField>
+
+<ParamField body="plan" type="enum" required>
+  Set to `STANDARD` for a Standard cluster
+</ParamField>
+
+<ParamField body="spec.serverless.usage_limits.provisioned_virtual_cpus" type="string" required>
+  Number of provisioned vCPUs (minimum 2)
+</ParamField>
+
+## Create an Advanced Cluster
+
+Create a CockroachDB Advanced cluster with dedicated resources.
+
+```bash POST /v1/clusters
+curl --request POST \
+  --url https://cockroachlabs.cloud/api/v1/clusters \
+  --header "Authorization: Bearer {secret_key}" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "name": "advanced-cluster",
+    "provider": "AWS",
+    "plan": "ADVANCED",
+    "spec": {
+      "dedicated": {
+        "region_nodes": {
+          "us-east-1": 3
+        },
+        "hardware": {
+          "machine_spec": {
+            "num_virtual_cpus": 4
+          }
+        }
+      }
+    }
+  }'
+```
+
+### Request Parameters
+
+<ParamField body="name" type="string" required>
+  Cluster name
+</ParamField>
+
+<ParamField body="provider" type="enum" required>
+  Cloud provider: `AWS`, `GCP`, or `AZURE`
+</ParamField>
+
+<ParamField body="plan" type="enum" required>
+  Set to `ADVANCED` for an Advanced cluster
+</ParamField>
+
+<ParamField body="spec.dedicated.region_nodes" type="object" required>
+  Object mapping region names to node counts (minimum 3 nodes per region)
+</ParamField>
+
+<ParamField body="spec.dedicated.hardware.machine_spec.num_virtual_cpus" type="integer" required>
+  Number of vCPUs per node
+</ParamField>
+
+<ParamField body="spec.dedicated.cockroach_version" type="string">
+  CockroachDB version (e.g., `v23.1.2`). Defaults to latest if omitted.
+</ParamField>
+
+## Update Cluster Resources
+
+Modify cluster resources such as vCPUs, storage limits, or provisioned capacity.
+
+### Update Basic Cluster Limits
+
+```bash PATCH /v1/clusters/{cluster_id}
+curl --request PATCH \
+  --url https://cockroachlabs.cloud/api/v1/clusters/{cluster_id} \
+  --header "Authorization: Bearer {secret_key}" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "serverless": {
+      "usage_limits": {
+        "storage_mib_limit": "5242880",
+        "request_unit_limit": "100000000"
+      }
+    }
+  }'
+```
+
+### Update Standard Cluster vCPUs
+
+```bash PATCH /v1/clusters/{cluster_id}
+curl --request PATCH \
+  --url https://cockroachlabs.cloud/api/v1/clusters/{cluster_id} \
+  --header "Authorization: Bearer {secret_key}" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "serverless": {
+      "usage_limits": {
+        "provisioned_virtual_cpus": "4"
+      }
+    }
+  }'
+```
+
+<Warning>
+You can decrease provisioned capacity only three times within a 7-day period. You can increase capacity at any time.
+</Warning>
+
+### Update Advanced Cluster Hardware
+
+```bash PATCH /v1/clusters/{cluster_id}
+curl --request PATCH \
+  --url https://cockroachlabs.cloud/api/v1/clusters/{cluster_id} \
+  --header "Authorization: Bearer {secret_key}" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "spec": {
+      "dedicated": {
+        "hardware": {
+          "machine_spec": {
+            "num_virtual_cpus": 8
+          }
+        }
+      }
+    }
+  }'
+```
+
+## Get Cluster Nodes
+
+Retrieve information about nodes in a cluster.
+
+```bash GET /v1/clusters/{cluster_id}/nodes
+curl --request GET \
+  --url https://cockroachlabs.cloud/api/v1/clusters/{cluster_id}/nodes \
+  --header "Authorization: Bearer {secret_key}"
+```
+
+### Response
+
+```json Response Example
+{
+  "nodes": [
+    {
+      "name": "node-1",
+      "region_name": "us-central1",
+      "status": "LIVE"
+    },
+    {
+      "name": "node-2",
+      "region_name": "us-central1",
+      "status": "LIVE"
+    }
+  ]
+}
+```
+
+<ResponseField name="nodes" type="array">
+  <Expandable title="Node Object">
+    <ResponseField name="name" type="string">
+      Node name
+    </ResponseField>
+    
+    <ResponseField name="region_name" type="string">
+      Cloud provider region
+    </ResponseField>
+    
+    <ResponseField name="status" type="enum">
+      Node status: `LIVE` or `NOT_READY`
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Delete a Cluster
+
+Permanently delete a cluster and all its data.
+
+```bash DELETE /v1/clusters/{cluster_id}
+curl --request DELETE \
+  --url https://cockroachlabs.cloud/api/v1/clusters/{cluster_id} \
+  --header "Authorization: Bearer {secret_key}"
+```
+
+<Warning>
+Deleting a cluster is permanent and irreversible. All data within the cluster will be lost. Deleted clusters cannot be restored.
+</Warning>
+
+## List Available Regions
+
+Get available regions for creating clusters.
+
+```bash GET /v1/clusters/available-regions
+curl --request GET \
+  --url 'https://cockroachlabs.cloud/api/v1/clusters/available-regions?provider=GCP' \
+  --header "Authorization: Bearer {secret_key}"
+```
+
+### Query Parameters
+
+<ParamField query="provider" type="enum" required>
+  Cloud provider: `AWS`, `GCP`, or `AZURE`
+</ParamField>
+
+### Response
+
+```json Response Example
+{
+  "regions": [
+    "us-central1",
+    "us-east1",
+    "us-west1",
+    "europe-west1",
+    "asia-southeast1"
+  ]
+}
+```
+
+## Required Permissions
+
+| Operation | Required Role |
+|-----------|---------------|
+| List clusters | Cluster Developer, Cluster Admin |
+| Get cluster details | Cluster Developer, Cluster Admin |
+| Create cluster | Cluster Creator, Cluster Admin |
+| Update cluster | Cluster Developer, Cluster Admin |
+| Delete cluster | Cluster Creator, Cluster Admin |
+| List available regions | Cluster Developer, Cluster Admin |

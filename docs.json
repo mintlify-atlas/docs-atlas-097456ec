@@ -1,122 +1,212 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "CockroachDB",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#6933FF",
+    "light": "#8A5AFF",
+    "dark": "#5929CC"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/cockroachdb/docs"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/cockroachdb/docs"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "install-cockroachdb",
+              "start-local-cluster"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Architecture",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "architecture/overview",
+              "architecture/sql-layer",
+              "architecture/transaction-layer",
+              "architecture/distribution-layer",
+              "architecture/replication-layer",
+              "architecture/storage-layer"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "concepts/distributed-transactions",
+              "concepts/data-replication",
+              "concepts/multi-region",
+              "concepts/resilience-recovery"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Deployment",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "deployment/cockroachdb-cloud",
+              "deployment/self-hosted",
+              "deployment/kubernetes",
+              "deployment/production-checklist"
+            ]
+          },
+          {
+            "group": "SQL Reference",
+            "pages": [
+              "sql/overview",
+              "sql/data-types",
+              "sql/statements",
+              "sql/functions",
+              "sql/transactions"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/backup-restore",
+              "operations/monitoring",
+              "operations/performance-tuning",
+              "operations/security",
+              "operations/troubleshooting"
+            ]
+          },
+          {
+            "group": "Migration",
+            "pages": [
+              "migration/migration-overview",
+              "migration/postgres-migration",
+              "migration/mysql-migration",
+              "migration/schema-design"
+            ]
+          },
+          {
+            "group": "Developer Guide",
+            "pages": [
+              "developer/build-app-overview",
+              "developer/client-drivers",
+              "developer/orms",
+              "developer/best-practices"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "SQL Statements",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Data Definition",
             "pages": [
-              "api-reference/introduction"
+              "sql-statements/create-database",
+              "sql-statements/create-table",
+              "sql-statements/create-index",
+              "sql-statements/alter-table",
+              "sql-statements/drop-table"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Data Manipulation",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "sql-statements/select",
+              "sql-statements/insert",
+              "sql-statements/update",
+              "sql-statements/delete",
+              "sql-statements/upsert"
+            ]
+          },
+          {
+            "group": "Transaction Control",
+            "pages": [
+              "sql-statements/begin-transaction",
+              "sql-statements/commit-transaction",
+              "sql-statements/rollback-transaction",
+              "sql-statements/savepoint"
+            ]
+          },
+          {
+            "group": "Access Control",
+            "pages": [
+              "sql-statements/create-role",
+              "sql-statements/grant",
+              "sql-statements/revoke",
+              "sql-statements/show-grants"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CockroachDB Cloud",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "cloud/overview",
+              "cloud/quickstart",
+              "cloud/create-cluster",
+              "cloud/connect-to-cluster"
+            ]
+          },
+          {
+            "group": "Cluster Management",
+            "pages": [
+              "cloud/cluster-management",
+              "cloud/scaling",
+              "cloud/backup-restore",
+              "cloud/monitoring"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "cloud/authentication",
+              "cloud/authorization",
+              "cloud/network-security",
+              "cloud/compliance"
+            ]
+          },
+          {
+            "group": "Billing & Plans",
+            "pages": [
+              "cloud/pricing",
+              "cloud/billing-management",
+              "cloud/plan-comparison"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Cloud API",
+            "pages": [
+              "api/cloud-api-overview",
+              "api/authentication",
+              "api/clusters",
+              "api/databases",
+              "api/users"
+            ]
+          },
+          {
+            "group": "Cluster API",
+            "pages": [
+              "api/cluster-api-overview",
+              "api/cluster-endpoints",
+              "api/health-endpoints"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

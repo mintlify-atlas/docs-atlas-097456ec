@@ -1,0 +1,285 @@
+---
+title: Cluster API Overview
+description: Access cluster status and monitoring information with the CockroachDB Cluster API
+---
+
+The CockroachDB Cluster API is a REST API that provides information about individual clusters and their nodes. This API offers programmatic access to much of the information available in the DB Console, enabling you to monitor and troubleshoot your cluster using your choice of tooling.
+
+## API Architecture
+
+The Cluster API differs from the Cloud API in several important ways:
+
+<CardGroup cols={2}>
+  <Card title="Cloud API" icon="cloud">
+    - Manages CockroachDB Cloud resources
+    - Hosted at cockroachlabs.cloud
+    - Uses bearer token authentication
+    - Controls cluster lifecycle
+  </Card>
+  <Card title="Cluster API" icon="server">
+    - Monitors individual clusters
+    - Hosted on each cluster node
+    - Uses session-based authentication
+    - Provides runtime metrics
+  </Card>
+</CardGroup>
+
+## Base URL
+
+The Cluster API is hosted by **all nodes** in your cluster on the same port as the DB Console:
+
+```
+http://{node-address}:8080/api/v2
+```
+
+The default port is `8080`. You can configure it using `--http-addr={server}:{port}` when starting nodes.
+
+### Example URLs
+
+```bash Local Development
+http://localhost:8080/api/v2/health
+```
+
+```bash Production Cluster
+https://cluster-node-1.example.com:8080/api/v2/nodes
+```
+
+## Authentication
+
+Most Cluster API endpoints require authentication using a session token. The `/health` and `/login` endpoints do not require authentication.
+
+### Requirements
+
+To authenticate with the Cluster API, you need:
+
+- A SQL role that is a member of the `admin` role
+- Login permissions for that role
+- A password set for the role
+
+### Using cockroach auth-session CLI
+
+The recommended way to manage sessions is using the `cockroach auth-session` command:
+
+```bash Create a session
+cockroach auth-session login {username} \
+  --certs-dir={certs-dir} \
+  --url=https://localhost:8080
+```
+
+```bash Use the session token
+export SESSION_TOKEN=$(cockroach auth-session login admin --certs-dir=certs)
+
+curl --request GET \
+  --url https://localhost:8080/api/v2/nodes/ \
+  --header "X-Cockroach-API-Session: $SESSION_TOKEN"
+```
+
+### Direct Login via API
+
+You can also authenticate directly through the `/login` endpoint:
+
+```bash POST /api/v2/login/
+curl --request POST \
+  --url https://localhost:8080/api/v2/login/ \
+  --header 'Content-Type: application/x-www-form-urlencoded' \
+  --data 'username=admin&password=your_password'
+```
+
+**Response:**
+```json
+{
+  "session": "CIGAiPis4fj3CBIQ3u0rRQJ3tD8yIqee4hipow=="
+}
+```
+
+Use this token in subsequent requests:
+
+```bash
+curl --request GET \
+  --url https://localhost:8080/api/v2/nodes/ \
+  --header 'X-Cockroach-API-Session: CIGAiPis4fj3CBIQ3u0rRQJ3tD8yIqee4hipow=='
+```
+
+### Logout
+
+Invalidate your session token:
+
+```bash POST /api/v2/logout/
+curl --request POST \
+  --url https://localhost:8080/api/v2/logout/ \
+  --header 'X-Cockroach-API-Session: {session_token}'
+```
+
+## Secure Cluster Requirements
+
+To connect to the API on a secure cluster, you need:
+
+- The CA certificate used by the cluster, either:
+  - Installed in your system's trusted certificate store, OR
+  - Provided explicitly in your HTTP client (e.g., curl's `--cacert` option)
+
+```bash Using curl with CA cert
+curl --cacert ca.crt \
+  --request GET \
+  --url https://localhost:8080/api/v2/health/
+```
+
+## API Versioning
+
+The Cluster API version is defined in the request path: `/api/v2/`
+
+- Current version: **v2.0**
+- Future CockroachDB versions may provide multiple API versions
+- The v2.0 API will remain available until deprecated
+
+### Version Stability
+
+Within v2.x:
+
+- All endpoint paths remain available
+- Response payloads maintain backward compatibility
+- Patch versions (v2.x) may add new endpoints
+- Patch versions will not remove existing endpoints
+
+## Available Endpoints by Category
+
+### Cluster Status
+
+- **Health Check**: `/health` - Verify node health and readiness
+- **Nodes**: `/nodes` - List all nodes and their details
+- **Node Ranges**: `/nodes/{node_id}/ranges` - Get ranges on a node
+
+### Database Information
+
+- **Databases**: `/databases` - List all databases
+- **Database Details**: `/databases/{database}` - Get database descriptor
+- **Database Grants**: `/databases/{database}/grants` - List privileges
+- **Tables**: `/databases/{database}/tables` - List tables in database
+- **Table Details**: `/databases/{database}/tables/{table}` - Get table schema
+
+### Cluster Monitoring
+
+- **Events**: `/events` - List recent cluster events
+- **Sessions**: `/sessions` - Get active SQL sessions
+- **Hot Ranges**: `/ranges/hot` - Find high-traffic ranges
+- **Range Details**: `/ranges/{range_id}` - Get detailed range info
+
+### User Management
+
+- **Users**: `/users` - List SQL users
+- **Login**: `/login` - Authenticate and get session token
+- **Logout**: `/logout` - Invalidate session token
+
+## Endpoint Stability
+
+Each endpoint has a stability classification:
+
+<ParamField path="Stable" type="stability">
+  Supported for production use. Will maintain backward compatibility within v2.x.
+</ParamField>
+
+<ParamField path="Unstable" type="stability">
+  Subject to change. May be modified or removed in future releases. Use with caution in production.
+</ParamField>
+
+See individual endpoint documentation for stability status.
+
+## Common Use Cases
+
+<AccordionGroup>
+  <Accordion title="Health Monitoring">
+    Continuously check cluster health for monitoring systems:
+    
+    ```bash
+    # No authentication required
+    curl https://localhost:8080/api/v2/health/
+    ```
+    
+    Returns HTTP 200 if the node is healthy and ready for SQL connections.
+  </Accordion>
+  
+  <Accordion title="Node Discovery">
+    List all nodes in the cluster with their versions and status:
+    
+    ```bash
+    curl -X GET https://localhost:8080/api/v2/nodes \
+      -H 'X-Cockroach-API-Session: {token}'
+    ```
+    
+    Useful for inventory, version tracking, and capacity planning.
+  </Accordion>
+  
+  <Accordion title="Database Inventory">
+    Enumerate all databases and tables:
+    
+    ```bash
+    curl -X GET https://localhost:8080/api/v2/databases \
+      -H 'X-Cockroach-API-Session: {token}'
+    ```
+    
+    Essential for backup planning and schema management.
+  </Accordion>
+  
+  <Accordion title="Performance Troubleshooting">
+    Identify hot ranges with high read/write activity:
+    
+    ```bash
+    curl -X GET https://localhost:8080/api/v2/ranges/hot \
+      -H 'X-Cockroach-API-Session: {token}'
+    ```
+    
+    Helps diagnose performance issues and plan data distribution.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Cluster Status Endpoints" icon="heartbeat" href="/api/cluster-endpoints">
+    Monitor nodes, ranges, and cluster status
+  </Card>
+  <Card title="Health Endpoints" icon="stethoscope" href="/api/health-endpoints">
+    Check node health and readiness
+  </Card>
+  <Card title="Database Management" icon="database" href="/api/databases">
+    Query databases and tables
+  </Card>
+  <Card title="Full API Reference" icon="book" href="https://cockroachlabs.com/docs/api/cluster/v2.html">
+    Complete Cluster API documentation
+  </Card>
+</CardGroup>
+
+## Error Responses
+
+### 401 Unauthorized
+
+Occurs when authentication is required but not provided or invalid:
+
+```json
+{
+  "error": "unauthorized",
+  "message": "valid session required"
+}
+```
+
+### 404 Not Found
+
+Occurs when the requested resource doesn't exist:
+
+```json
+{
+  "error": "not found",
+  "message": "node 99 not found"
+}
+```
+
+### 500 Internal Server Error
+
+Occurs when an unexpected error happens:
+
+```json
+{
+  "error": "internal server error",
+  "message": "unexpected error processing request"
+}
+```

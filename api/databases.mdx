@@ -1,0 +1,431 @@
+---
+title: Database Management API
+description: Manage databases within CockroachDB clusters using the Cluster API
+---
+
+The Database Management API provides endpoints for managing databases within your CockroachDB clusters. These endpoints are part of the Cluster API v2, which runs on your cluster nodes.
+
+## API Base URL
+
+The Cluster API is hosted by all nodes in your cluster on the same port as the DB Console (default port 8080):
+
+```
+http://localhost:8080/api/v2
+```
+
+You can configure the port using `--http-addr={server}:{port}` when starting nodes.
+
+## Authentication
+
+All database endpoints (except `/health` and `/login`) require authentication using a session token.
+
+### Obtaining a Session Token
+
+```bash POST /api/v2/login/
+curl --request POST \
+  --url https://localhost:8080/api/v2/login/ \
+  --header 'Content-Type: application/x-www-form-urlencoded' \
+  --data 'username={username}&password={password}'
+```
+
+**Requirements:**
+- A SQL role that is a member of the `admin` role
+- Login permissions and a password
+
+**Response:**
+```json
+{
+  "session": "CIGAiPis4fj3CBIQ3u0rRQJ3tD8yIqee4hipow=="
+}
+```
+
+Use this session token in subsequent requests:
+
+```bash
+curl --request GET \
+  --url https://localhost:8080/api/v2/databases \
+  --header 'X-Cockroach-API-Session: CIGAiPis4fj3CBIQ3u0rRQJ3tD8yIqee4hipow=='
+```
+
+## List Databases
+
+Retrieve all databases in the cluster.
+
+```bash GET /api/v2/databases
+curl --request GET \
+  --url https://localhost:8080/api/v2/databases \
+  --header 'X-Cockroach-API-Session: {session_token}'
+```
+
+### Response
+
+<ResponseField name="databases" type="array">
+  Array of database names
+  
+  <Expandable title="Database Object">
+    <ResponseField name="name" type="string">
+      Database name
+    </ResponseField>
+    
+    <ResponseField name="id" type="string">
+      Database descriptor ID
+    </ResponseField>
+    
+    <ResponseField name="size_bytes" type="integer">
+      Total size of the database in bytes
+    </ResponseField>
+    
+    <ResponseField name="table_count" type="integer">
+      Number of tables in the database
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json Response Example
+{
+  "databases": [
+    {
+      "name": "defaultdb",
+      "id": "52"
+    },
+    {
+      "name": "postgres",
+      "id": "53"
+    },
+    {
+      "name": "production",
+      "id": "54"
+    }
+  ]
+}
+```
+
+## Get Database Details
+
+Get the descriptor ID and metadata for a specific database.
+
+```bash GET /api/v2/databases/{database}
+curl --request GET \
+  --url https://localhost:8080/api/v2/databases/{database} \
+  --header 'X-Cockroach-API-Session: {session_token}'
+```
+
+### Path Parameters
+
+<ParamField path="database" type="string" required>
+  Name of the database
+</ParamField>
+
+### Response
+
+```json Response Example
+{
+  "database_name": "production",
+  "descriptor_id": "54",
+  "size_bytes": 1073741824,
+  "table_count": 15,
+  "store_ids": [1, 2, 3]
+}
+```
+
+<ResponseField name="database_name" type="string">
+  Name of the database
+</ResponseField>
+
+<ResponseField name="descriptor_id" type="string">
+  Unique descriptor ID for the database
+</ResponseField>
+
+<ResponseField name="size_bytes" type="integer">
+  Total size of all data in the database
+</ResponseField>
+
+<ResponseField name="table_count" type="integer">
+  Number of tables in the database
+</ResponseField>
+
+## List Database Grants
+
+List all privileges granted to users for a specific database.
+
+```bash GET /api/v2/databases/{database}/grants
+curl --request GET \
+  --url https://localhost:8080/api/v2/databases/{database}/grants \
+  --header 'X-Cockroach-API-Session: {session_token}'
+```
+
+### Path Parameters
+
+<ParamField path="database" type="string" required>
+  Name of the database
+</ParamField>
+
+### Response
+
+```json Response Example
+{
+  "grants": [
+    {
+      "user": "admin",
+      "privileges": ["ALL"]
+    },
+    {
+      "user": "app_user",
+      "privileges": ["SELECT", "INSERT", "UPDATE"]
+    },
+    {
+      "user": "readonly",
+      "privileges": ["SELECT"]
+    }
+  ]
+}
+```
+
+<ResponseField name="grants" type="array">
+  Array of grant objects
+  
+  <Expandable title="Grant Object">
+    <ResponseField name="user" type="string">
+      SQL username
+    </ResponseField>
+    
+    <ResponseField name="privileges" type="array">
+      Array of privilege strings:
+      - `ALL`: All privileges
+      - `SELECT`: Read access
+      - `INSERT`: Insert new rows
+      - `UPDATE`: Modify existing rows
+      - `DELETE`: Delete rows
+      - `CREATE`: Create tables and schemas
+      - `DROP`: Drop objects
+      - `GRANT`: Grant privileges to other users
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## List Database Tables
+
+List all tables in a specific database.
+
+```bash GET /api/v2/databases/{database}/tables
+curl --request GET \
+  --url https://localhost:8080/api/v2/databases/{database}/tables \
+  --header 'X-Cockroach-API-Session: {session_token}'
+```
+
+### Path Parameters
+
+<ParamField path="database" type="string" required>
+  Name of the database
+</ParamField>
+
+### Response
+
+```json Response Example
+{
+  "tables": [
+    {
+      "name": "users",
+      "schema_name": "public",
+      "table_id": "55",
+      "size_bytes": 524288000
+    },
+    {
+      "name": "orders",
+      "schema_name": "public",
+      "table_id": "56",
+      "size_bytes": 1048576000
+    }
+  ]
+}
+```
+
+<ResponseField name="tables" type="array">
+  Array of table objects
+  
+  <Expandable title="Table Object">
+    <ResponseField name="name" type="string">
+      Table name
+    </ResponseField>
+    
+    <ResponseField name="schema_name" type="string">
+      Schema containing the table (usually "public")
+    </ResponseField>
+    
+    <ResponseField name="table_id" type="string">
+      Unique table descriptor ID
+    </ResponseField>
+    
+    <ResponseField name="size_bytes" type="integer">
+      Total size of the table in bytes
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Get Table Details
+
+Get detailed information about a specific table.
+
+```bash GET /api/v2/databases/{database}/tables/{table}
+curl --request GET \
+  --url https://localhost:8080/api/v2/databases/{database}/tables/{table} \
+  --header 'X-Cockroach-API-Session: {session_token}'
+```
+
+### Path Parameters
+
+<ParamField path="database" type="string" required>
+  Name of the database
+</ParamField>
+
+<ParamField path="table" type="string" required>
+  Name of the table
+</ParamField>
+
+### Response
+
+```json Response Example
+{
+  "table_name": "users",
+  "table_id": "55",
+  "database_name": "production",
+  "schema_name": "public",
+  "columns": [
+    {
+      "name": "id",
+      "type": "UUID",
+      "nullable": false
+    },
+    {
+      "name": "email",
+      "type": "STRING",
+      "nullable": false
+    }
+  ],
+  "indexes": [
+    {
+      "name": "primary",
+      "columns": ["id"],
+      "unique": true
+    },
+    {
+      "name": "users_email_idx",
+      "columns": ["email"],
+      "unique": true
+    }
+  ],
+  "grants": [
+    {
+      "user": "admin",
+      "privileges": ["ALL"]
+    }
+  ],
+  "range_count": 12,
+  "size_bytes": 524288000
+}
+```
+
+<ResponseField name="table_name" type="string">
+  Name of the table
+</ResponseField>
+
+<ResponseField name="table_id" type="string">
+  Unique table descriptor ID
+</ResponseField>
+
+<ResponseField name="columns" type="array">
+  Array of column definitions
+</ResponseField>
+
+<ResponseField name="indexes" type="array">
+  Array of index definitions
+</ResponseField>
+
+<ResponseField name="grants" type="array">
+  Privileges granted on this table
+</ResponseField>
+
+<ResponseField name="range_count" type="integer">
+  Number of ranges storing this table's data
+</ResponseField>
+
+<ResponseField name="size_bytes" type="integer">
+  Total size of the table in bytes
+</ResponseField>
+
+## Logout
+
+Invalidate your session token.
+
+```bash POST /api/v2/logout/
+curl --request POST \
+  --url https://localhost:8080/api/v2/logout/ \
+  --header 'X-Cockroach-API-Session: {session_token}'
+```
+
+## Support Policy
+
+| Endpoint | Stability |
+|----------|----------|
+| `/databases` | Stable |
+| `/databases/{database}` | Stable |
+| `/databases/{database}/grants` | Stable |
+| `/databases/{database}/tables` | Stable |
+| `/databases/{database}/tables/{table}` | Stable |
+
+**Stable** endpoints are supported and will maintain backward compatibility within the v2 API version.
+
+## Common Use Cases
+
+<AccordionGroup>
+  <Accordion title="Monitor Database Growth">
+    Use `/databases` and `/databases/{database}` endpoints to track database and table sizes over time for capacity planning.
+    
+    ```bash
+    curl -X GET https://localhost:8080/api/v2/databases/production \
+      -H 'X-Cockroach-API-Session: {token}' | jq '.size_bytes'
+    ```
+  </Accordion>
+  
+  <Accordion title="Audit Database Permissions">
+    Use `/databases/{database}/grants` to audit which users have access to sensitive databases.
+    
+    ```bash
+    curl -X GET https://localhost:8080/api/v2/databases/production/grants \
+      -H 'X-Cockroach-API-Session: {token}'
+    ```
+  </Accordion>
+  
+  <Accordion title="Inventory Schema Objects">
+    Use `/databases/{database}/tables` to generate an inventory of all tables and schemas.
+    
+    ```bash
+    curl -X GET https://localhost:8080/api/v2/databases/production/tables \
+      -H 'X-Cockroach-API-Session: {token}'
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Error Responses
+
+### 401 Unauthorized
+
+Occurs when the session token is missing, invalid, or expired.
+
+```json
+{
+  "error": "unauthorized",
+  "message": "valid session required"
+}
+```
+
+### 404 Not Found
+
+Occurs when the specified database or table doesn't exist.
+
+```json
+{
+  "error": "not found",
+  "message": "database \"nonexistent\" does not exist"
+}
+```

@@ -1,0 +1,468 @@
+---
+title: Resilience and Recovery
+description: Learn how CockroachDB ensures data resilience and provides recovery options for disaster scenarios
+---
+
+CockroachDB is designed to be fault-tolerant with automatic recovery, but comprehensive disaster recovery planning requires backups and recovery procedures. This page covers how CockroachDB ensures resilience and how you can protect your data against catastrophic failures.
+
+## Built-In Resilience
+
+CockroachDB provides automatic resilience through its architecture:
+
+### Automatic Replication
+
+Every piece of data is replicated across multiple nodes by default:
+
+- **3x replication** ensures data survives node failures
+- **Raft consensus** maintains consistency across replicas
+- **Automatic rebalancing** redistributes data when nodes join or leave
+
+<Info>
+With 3x replication, you can lose any 1 node without data loss or downtime. The cluster automatically promotes new Raft leaders and leaseholders within seconds.
+</Info>
+
+### Self-Healing Capabilities
+
+When failures occur, CockroachDB automatically:
+
+<Steps>
+  <Step title="Detects Failures">
+    Store liveness and Raft heartbeats detect unresponsive nodes within seconds.
+  </Step>
+  
+  <Step title="Elects New Leaders">
+    Follower replicas hold elections and promote new Raft leaders for affected ranges.
+  </Step>
+  
+  <Step title="Transfers Leases">
+    New leaseholders are established to serve reads and coordinate writes.
+  </Step>
+  
+  <Step title="Restores Replication">
+    After a timeout, new replicas are created on healthy nodes to restore the replication factor.
+  </Step>
+</Steps>
+
+<Note>
+The entire recovery process happens automatically without human intervention. Most failures are recovered in seconds, not minutes.
+</Note>
+
+### Range Circuit Breakers
+
+When individual ranges become unavailable, **per-replica circuit breakers** prevent requests from hanging indefinitely:
+
+- Timeout after 60 seconds by default (configurable via `kv.replica_circuit_breaker.slow_replication_threshold`)
+- Return `ReplicaUnavailableError` instead of hanging
+- Automatically reset when the range becomes available again
+
+This ensures your application receives timely errors rather than experiencing mysterious timeouts.
+
+## Backup and Restore
+
+While automatic replication protects against hardware failures, backups protect against:
+
+- **User errors**: Accidental deletions or data corruption
+- **Software bugs**: Application logic errors that corrupt data
+- **Security incidents**: Ransomware or malicious data destruction
+- **Compliance requirements**: Retention policies and audit trails
+
+### Backup Types
+
+CockroachDB supports multiple backup strategies:
+
+<Accordion title="Full Backups">
+**What it is**: A complete copy of your cluster, database, or table at a point in time.
+
+**Use cases**:
+- Initial backup for a new backup schedule
+- Base for incremental backups
+- Regulatory compliance requiring complete snapshots
+
+**Example**:
+```sql
+BACKUP DATABASE mydb INTO 's3://backup-bucket/full?AWS_ACCESS_KEY_ID=...&AWS_SECRET_ACCESS_KEY=...';
+```
+
+**Pros**: Complete, standalone backup
+**Cons**: Larger storage requirements, longer backup times
+</Accordion>
+
+<Accordion title="Incremental Backups">
+**What it is**: Only the data that changed since the last backup (full or incremental).
+
+**Use cases**:
+- Frequent backups with minimal storage overhead
+- Continuous protection with hourly/daily incrementals
+- Optimizing backup windows
+
+**Example**:
+```sql
+-- Full backup first
+BACKUP DATABASE mydb INTO 's3://backup-bucket/scheduled';
+
+-- Incremental backups
+BACKUP DATABASE mydb INTO LATEST IN 's3://backup-bucket/scheduled';
+```
+
+**Pros**: Fast, space-efficient
+**Cons**: Requires full backup as base, longer restore chains
+</Accordion>
+
+<Accordion title="Revision History Backups">
+**What it is**: Captures all changes within the garbage collection window, enabling point-in-time restore.
+
+**Use cases**:
+- Recovering from user errors at specific times
+- Forensic analysis of data changes
+- Compliance with retention policies
+
+**Example**:
+```sql
+BACKUP DATABASE mydb INTO 's3://backup-bucket/versioned' 
+WITH revision_history;
+
+-- Restore to a specific timestamp
+RESTORE DATABASE mydb FROM LATEST IN 's3://backup-bucket/versioned' 
+AS OF SYSTEM TIME '2024-03-01 10:30:00';
+```
+
+**Pros**: Point-in-time recovery, historical analysis
+**Cons**: Larger backups, longer restore times
+</Accordion>
+
+### Scheduled Backups
+
+<Tip>
+**Best practice**: Always use scheduled backups rather than manual backups. Schedules ensure consistency and protect data from garbage collection.
+</Tip>
+
+Create automatic backup schedules:
+
+```sql
+CREATE SCHEDULE daily_backup 
+FOR BACKUP DATABASE mydb INTO 's3://backup-bucket/daily'
+RECURRING '@daily'
+WITH SCHEDULE OPTIONS first_run = 'now';
+```
+
+Scheduled backups:
+- Run automatically at specified intervals
+- Protect data from garbage collection until backed up
+- Can be paused, resumed, or modified
+- Track completion and failures
+
+<Accordion title="Monitoring Backup Schedules">
+```sql
+-- View all schedules
+SHOW SCHEDULES;
+
+-- View specific schedule details
+SHOW SCHEDULE 123;
+
+-- View recent backup jobs
+SHOW JOBS SELECT * FROM [SHOW JOBS] WHERE job_type = 'BACKUP';
+```
+
+Monitor:
+- Last successful backup timestamp
+- Backup duration and size
+- Error messages and failures
+- Protected timestamp advance
+</Accordion>
+
+### Backup Storage
+
+<Warning>
+**Critical**: Store backups in different failure domains than your cluster. If your cluster and backups are in the same datacenter, a site-wide failure destroys both.
+</Warning>
+
+Supported cloud storage:
+
+| Provider | URL Format | Use Case |
+|----------|------------|----------|
+| **AWS S3** | `s3://bucket/path` | Standard cloud backups |
+| **Google Cloud Storage** | `gs://bucket/path` | Google Cloud deployments |
+| **Azure Blob Storage** | `azure://container/path` | Azure deployments |
+| **S3-compatible** | `s3://endpoint/bucket/path` | MinIO, DigitalOcean Spaces |
+
+#### Immutable Storage
+
+<Tip>
+Enable object locking or immutable storage to protect backups from deletion or ransomware:
+
+- **AWS S3**: Enable Object Lock with retention policies
+- **GCS**: Set retention policies on buckets
+- **Azure**: Use immutable blob storage
+</Tip>
+
+This prevents:
+- Accidental backup deletion
+- Malicious backup destruction
+- Ransomware from encrypting backups
+
+### Locality-Aware Backups
+
+For multi-region deployments, optimize backup performance and costs:
+
+```sql
+BACKUP DATABASE mydb INTO 
+  ('s3://us-east-bucket/backups?COCKROACH_LOCALITY=region=us-east',
+   's3://eu-west-bucket/backups?COCKROACH_LOCALITY=region=eu-west')
+WITH revision_history;
+```
+
+**Benefits**:
+- Each region writes to a nearby storage bucket
+- Reduces cross-region bandwidth costs
+- Speeds up backup completion
+- Enables faster locality-aware restores
+
+### Restoring Data
+
+Restore entire databases, specific tables, or point-in-time snapshots:
+
+<Accordion title="Full Database Restore">
+```sql
+RESTORE DATABASE mydb FROM LATEST IN 's3://backup-bucket/scheduled';
+```
+
+Restores the entire database from the most recent backup.
+</Accordion>
+
+<Accordion title="Specific Table Restore">
+```sql
+RESTORE TABLE mydb.users FROM LATEST IN 's3://backup-bucket/scheduled';
+```
+
+Restores only the `users` table, useful for recovering from targeted data corruption.
+</Accordion>
+
+<Accordion title="Point-in-Time Restore">
+```sql
+RESTORE DATABASE mydb FROM LATEST IN 's3://backup-bucket/versioned'
+AS OF SYSTEM TIME '2024-03-01 14:30:00';
+```
+
+Restores data as it existed at a specific timestamp (requires revision history).
+</Accordion>
+
+<Accordion title="New Database Name">
+```sql
+RESTORE DATABASE mydb FROM LATEST IN 's3://backup-bucket/scheduled'
+WITH new_db_name = 'mydb_restored';
+```
+
+Restores to a different database name, useful for validation before replacing production.
+</Accordion>
+
+## Disaster Recovery Strategies
+
+### RTO and RPO Planning
+
+Define your recovery objectives:
+
+- **Recovery Time Objective (RTO)**: How quickly must you restore service?
+- **Recovery Point Objective (RPO)**: How much data loss is acceptable?
+
+| RTO | RPO | Strategy |
+|-----|-----|----------|
+| Minutes | Seconds | Multi-region with region survival + follower reads |
+| Hours | Minutes | Multi-region with zone survival + hourly backups |
+| Days | Hours | Single-region with daily backups |
+
+### Geographic Redundancy
+
+For critical workloads, implement geographic redundancy:
+
+<Steps>
+  <Step title="Multi-Region Cluster">
+    Deploy CockroachDB across 3+ regions with region survival.
+  </Step>
+  
+  <Step title="Cross-Region Backups">
+    Store backups in different regions than your primary cluster.
+  </Step>
+  
+  <Step title="Secondary Cluster (Optional)">
+    For maximum resilience, maintain a standby cluster in a different geography using physical cluster replication or logical data replication.
+  </Step>
+  
+  <Step title="Regular DR Drills">
+    Test your recovery procedures quarterly:
+    - Restore from backups to verify integrity
+    - Simulate region failures
+    - Measure actual RTO and RPO
+  </Step>
+</Steps>
+
+### Backup Validation
+
+Never trust unvalidated backups. CockroachDB provides three levels of backup validation:
+
+<Accordion title="Level 1: Metadata Validation (Fast)">
+```sql
+SHOW BACKUP LATEST IN 's3://backup-bucket/scheduled';
+```
+
+Validates:
+- Backup metadata is readable
+- File structure is intact
+- Manifest is consistent
+
+**Runtime**: Seconds
+</Accordion>
+
+<Accordion title="Level 2: Checksum Validation (Medium)">
+```sql
+SHOW BACKUP LATEST IN 's3://backup-bucket/scheduled' WITH check_files;
+```
+
+Validates:
+- All files are present and readable
+- Checksums match expected values
+
+**Runtime**: Minutes (depends on backup size)
+</Accordion>
+
+<Accordion title="Level 3: Full Restore Validation (Thorough)">
+```sql
+RESTORE DATABASE mydb FROM LATEST IN 's3://backup-bucket/scheduled'
+WITH new_db_name = 'mydb_test';
+```
+
+Validates:
+- Complete restore succeeds
+- Data is queryable
+- Indexes and constraints are intact
+
+**Runtime**: Hours (depends on data size)
+</Accordion>
+
+<Tip>
+Schedule monthly full restore validations to a test cluster. This verifies your backups work AND ensures your team knows the restore procedure.
+</Tip>
+
+## Observability and Monitoring
+
+### Backup Monitoring
+
+Monitor backup health through:
+
+- **Backup job metrics**: Success rate, duration, data size
+- **Protected timestamps**: Ensure data isn't garbage collected before backup
+- **Storage space**: Alert when backup storage is running low
+- **Schedule failures**: Immediate alerts when scheduled backups fail
+
+### Key Metrics to Track
+
+| Metric | Alert Threshold | Action |
+|--------|----------------|--------|
+| Backup failure rate | > 0% | Investigate immediately |
+| Backup duration | > 2x baseline | Check cluster performance |
+| Backup age | > 25 hours (for daily) | Investigate schedule delays |
+| Storage utilization | > 80% | Expand storage or adjust retention |
+
+### Prometheus Integration
+
+Export backup metrics to Prometheus:
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: 'cockroachdb'
+    static_configs:
+      - targets: ['localhost:8080']  # CockroachDB metrics endpoint
+```
+
+Query metrics:
+```promql
+# Backup job success rate
+rate(jobs_backup_success[1h]) / rate(jobs_backup_total[1h])
+
+# Time since last successful backup
+time() - jobs_backup_last_success_timestamp
+```
+
+## Best Practices
+
+<Tip>
+**3-2-1 Backup Rule**: Maintain 3 copies of data (production + 2 backups), on 2 different media types, with 1 copy offsite.
+</Tip>
+
+<Tip>
+**Automate everything**: Use scheduled backups, automated validation, and automated alerting. Manual processes eventually fail.
+</Tip>
+
+<Tip>
+**Test restores regularly**: The best backup strategy is worthless if restores don't work. Practice your disaster recovery procedures.
+</Tip>
+
+<Tip>
+**Encrypt backups**: Use encryption at rest for compliance and security:
+```sql
+BACKUP DATABASE mydb INTO 's3://bucket/encrypted'
+WITH encryption_passphrase = 'strong-passphrase';
+```
+</Tip>
+
+<Tip>
+**Document procedures**: Maintain runbooks for restore procedures, including:
+- Access credentials for backup storage
+- Step-by-step restore commands
+- Validation steps
+- Rollback procedures
+</Tip>
+
+## Recovery Scenarios
+
+### Accidental Table Drop
+
+```sql
+-- Restore just the deleted table
+RESTORE TABLE mydb.deleted_table 
+FROM LATEST IN 's3://backup-bucket/scheduled';
+```
+
+### Data Corruption in Specific Rows
+
+```sql
+-- Restore to a temporary database for comparison
+RESTORE DATABASE mydb FROM LATEST IN 's3://backup-bucket/versioned'
+AS OF SYSTEM TIME '2024-03-01 09:00:00'
+WITH new_db_name = 'mydb_recovery';
+
+-- Extract and compare data
+SELECT * FROM mydb_recovery.users WHERE id = 123;
+```
+
+### Complete Cluster Loss
+
+<Steps>
+  <Step title="Provision New Cluster">
+    Deploy new CockroachDB nodes in a healthy region or datacenter.
+  </Step>
+  
+  <Step title="Initialize Cluster">
+    Start and initialize the new cluster.
+  </Step>
+  
+  <Step title="Restore from Backup">
+    ```sql
+    RESTORE FROM LATEST IN 's3://backup-bucket/scheduled';
+    ```
+  </Step>
+  
+  <Step title="Validate Data">
+    Run validation queries to ensure data integrity.
+  </Step>
+  
+  <Step title="Update DNS/Load Balancers">
+    Point application traffic to the new cluster.
+  </Step>
+</Steps>
+
+## See Also
+
+- [Data Replication](/concepts/data-replication) - How replication provides automatic resilience
+- [Multi-Region Deployments](/concepts/multi-region) - Geographic redundancy strategies
+- [Distributed Transactions](/concepts/distributed-transactions) - How transactions maintain consistency

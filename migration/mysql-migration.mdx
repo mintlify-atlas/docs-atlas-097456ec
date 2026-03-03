@@ -1,0 +1,471 @@
+---
+title: Migrating from MySQL
+description: Step-by-step guide to migrate your MySQL database to CockroachDB using MOLT tools.
+---
+
+This guide walks you through migrating a MySQL database to CockroachDB using the MOLT toolkit. While CockroachDB primarily supports the PostgreSQL wire protocol, MOLT provides full support for MySQL migrations.
+
+## Before you begin
+
+Ensure you have the following:
+
+- A MySQL database (versions 5.7, 8.0+ supported)
+- A CockroachDB cluster (Cloud or Self-Hosted)
+- Network connectivity between source and target databases
+- Appropriate user permissions on both databases
+
+## Installation
+
+Install the MOLT CLI tools:
+
+<CodeGroup>
+```bash macOS (Homebrew)
+brew install cockroachdb/tap/molt
+```
+
+```bash Linux
+curl -L https://github.com/cockroachdb/molt/releases/latest/download/molt-linux-amd64.tar.gz | tar xvz
+sudo mv molt /usr/local/bin/
+```
+
+```bash Docker
+docker pull cockroachdb/molt:latest
+```
+</CodeGroup>
+
+## Migration workflow
+
+<Steps>
+  <Step title="Create migration users">
+    ### Create MySQL migration user
+
+    The SQL user running MOLT requires specific privileges on the source database.
+
+    ```sql
+    -- Connect to MySQL as root
+    CREATE USER 'molt_user'@'%' IDENTIFIED BY 'secure_password';
+    
+    -- Grant table privileges
+    GRANT SELECT ON source_db.* TO 'molt_user'@'%';
+    
+    -- For replication, grant additional privileges
+    GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'molt_user'@'%';
+    
+    FLUSH PRIVILEGES;
+    ```
+
+    ### Create CockroachDB user
+
+    ```sql
+    -- Connect to CockroachDB
+    CREATE USER molt_user WITH PASSWORD 'secure_password';
+    
+    -- Grant database privileges
+    GRANT ALL ON DATABASE target_db TO molt_user;
+    GRANT CREATE ON DATABASE target_db TO molt_user;
+    ```
+  </Step>
+
+  <Step title="Convert the schema">
+    Use the MOLT Schema Conversion Tool to convert your MySQL schema to CockroachDB-compatible DDL.
+
+    <Note>
+    The Schema Conversion Tool is available in the CockroachDB Cloud Console under the Migrations page.
+    </Note>
+
+    ### Key schema differences
+
+    MySQL and CockroachDB have important differences:
+
+    | MySQL | CockroachDB | Notes |
+    |-------|-------------|-------|
+    | `AUTO_INCREMENT` | `DEFAULT unique_rowid()` or `gen_random_uuid()` | Use UUID for better distribution |
+    | `INT` (32-bit) | `INT4` or `INT8` | CockroachDB `INT` defaults to 64-bit |
+    | `DATETIME` | `TIMESTAMPTZ` | Store with timezone |
+    | `TINYINT(1)` | `BOOL` | For boolean values |
+    | `ENUM` | `STRING` with `CHECK` or custom `ENUM` type | Must be explicitly defined |
+
+    ### Apply the schema
+
+    ```sql
+    -- Example converted schema
+    CREATE TABLE employees (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        first_name STRING NOT NULL,
+        last_name STRING NOT NULL,
+        email STRING UNIQUE,
+        hire_date TIMESTAMPTZ DEFAULT now(),
+        is_active BOOL DEFAULT true
+    );
+    ```
+
+    <Warning>
+    Drop constraints and secondary indexes before data load to improve performance. You'll recreate them after the data load completes.
+    </Warning>
+  </Step>
+
+  <Step title="Configure MySQL for replication (optional)">
+    If you're planning a minimal-downtime migration with continuous replication, configure MySQL for GTID-based replication.
+
+    ### Enable GTID and binary logging
+
+    Edit `my.cnf` or `my.ini`:
+
+    ```ini
+    [mysqld]
+    # Enable GTID
+    gtid_mode = ON
+    enforce_gtid_consistency = ON
+    
+    # Enable binary logging
+    log_bin = mysql-bin
+    binlog_format = ROW
+    binlog_row_metadata = FULL
+    # Or for older MySQL versions:
+    # binlog_row_image = FULL
+    
+    # Set retention (in seconds, 7 days example)
+    binlog_expire_logs_seconds = 604800
+    ```
+
+    Restart MySQL for changes to take effect.
+
+    ### Verify configuration
+
+    ```sql
+    SHOW VARIABLES LIKE 'gtid_mode';
+    -- Should return: ON
+    
+    SHOW VARIABLES LIKE 'binlog_format';
+    -- Should return: ROW
+    ```
+  </Step>
+
+  <Step title="Load data with MOLT Fetch">
+    ### Set connection strings
+
+    ```bash
+    export SOURCE="mysql://molt_user:password@tcp(source-host:3306)/source_db"
+    export TARGET="postgresql://molt_user:password@target-host:26257/target_db?sslmode=require"
+    ```
+
+    <Info>
+    MySQL connection strings use `mysql://` protocol and `tcp()` format for host:port.
+    </Info>
+
+    ### For bulk load (with downtime)
+
+    Perform a one-time bulk load:
+
+    ```bash
+    molt fetch \
+      --source $SOURCE \
+      --target $TARGET \
+      --table-filter 'employees|payments|orders' \
+      --bucket-path 's3://migration-bucket/data' \
+      --table-handling truncate-if-exists \
+      --ignore-replication-check
+    ```
+
+    <Note>
+    MySQL doesn't use schema namespaces like PostgreSQL. Tables are migrated to CockroachDB's default `public` schema.
+    </Note>
+
+    ### For minimal downtime migration
+
+    Load data and capture GTID checkpoint:
+
+    ```bash
+    molt fetch \
+      --source $SOURCE \
+      --target $TARGET \
+      --table-filter 'employees|payments|orders' \
+      --bucket-path 's3://migration-bucket/data' \
+      --table-handling truncate-if-exists
+    ```
+
+    The output will include the GTID checkpoint:
+    ```
+    cdc_cursor: 4c658ae6-e8ad-11ef-8449-0242ac140006:1-29
+    ```
+
+    Save this GTID for starting replication.
+  </Step>
+
+  <Step title="Verify data consistency">
+    Use MOLT Verify to confirm data consistency:
+
+    ```bash
+    molt verify \
+      --source $SOURCE \
+      --target $TARGET \
+      --table-filter 'employees|payments|orders'
+    ```
+
+    MOLT Verify checks:
+    - Table structure and column definitions
+    - Row counts
+    - Row-level data consistency
+  </Step>
+
+  <Step title="Start continuous replication (optional)">
+    For minimal downtime migrations, start MOLT Replicator to replicate ongoing changes.
+
+    ### Create table filter userscript (if needed)
+
+    If you filtered tables during the initial load, create a userscript to filter tables on replication:
+
+    ```typescript table_filter.ts
+    import { Userscript } from "@cockroachdb/replicator";
+    
+    export const script: Userscript = {
+      filterTable: (table) => {
+        const allowedTables = ['employees', 'payments', 'orders'];
+        return allowedTables.includes(table.name);
+      }
+    };
+    ```
+
+    ### Start replication
+
+    Use the GTID from the fetch checkpoint:
+
+    ```bash
+    replicator mylogical \
+      --sourceConn $SOURCE \
+      --targetConn $TARGET \
+      --targetSchema defaultdb.public \
+      --defaultGTIDSet '4c658ae6-e8ad-11ef-8449-0242ac140006:1-29' \
+      --stagingSchema defaultdb._replicator \
+      --stagingCreateSchema \
+      --metricsAddr :30005 \
+      --userscript table_filter.ts \
+      -v
+    ```
+
+    ### Monitor replication
+
+    Access replication metrics at:
+    ```
+    http://localhost:30005/_/varz
+    ```
+
+    Key metrics to monitor:
+    - `replication_lag_seconds`: Time lag between source and target
+    - `mutations_applied`: Number of changes applied
+    - `binlog_position`: Current position in MySQL binary log
+  </Step>
+
+  <Step title="Recreate constraints and indexes">
+    After data load completes, recreate the constraints and indexes you dropped:
+
+    ```sql
+    -- Add foreign key constraints
+    ALTER TABLE orders
+      ADD CONSTRAINT fk_employee
+      FOREIGN KEY (employee_id)
+      REFERENCES employees(id);
+    
+    -- Create secondary indexes
+    CREATE INDEX idx_employees_email
+      ON employees(email);
+    
+    CREATE INDEX idx_orders_date
+      ON orders(order_date);
+    ```
+  </Step>
+
+  <Step title="Cutover to CockroachDB">
+    ### Pre-cutover checklist
+
+    - [ ] Verify data consistency with MOLT Verify
+    - [ ] Confirm replication lag is minimal (if using replication)
+    - [ ] Test application queries on CockroachDB
+    - [ ] Update application code for any MySQL-specific syntax
+    - [ ] Prepare rollback plan
+
+    ### Cutover procedure
+
+    1. **Stop application writes** to the source database
+    2. **Wait for replication to drain** (if using continuous replication)
+    3. **Run final verification** with MOLT Verify
+    4. **Update connection strings** in your application to point to CockroachDB
+    5. **Start application traffic** on CockroachDB
+
+    <Tip>
+    Keep the replication stream running initially so you can failback to MySQL if needed.
+    </Tip>
+  </Step>
+</Steps>
+
+## Application compatibility
+
+### Connection drivers
+
+CockroachDB uses PostgreSQL drivers, not MySQL drivers. Update your application:
+
+<CodeGroup>
+```javascript Node.js
+// Before (MySQL)
+const mysql = require('mysql2');
+const connection = mysql.createConnection({
+  host: 'mysql-host',
+  user: 'user',
+  password: 'password',
+  database: 'mydb'
+});
+
+// After (CockroachDB)
+const { Pool } = require('pg');
+const pool = new Pool({
+  host: 'cockroach-host',
+  port: 26257,
+  user: 'user',
+  password: 'password',
+  database: 'mydb',
+  ssl: { rejectUnauthorized: false }
+});
+```
+
+```python Python
+# Before (MySQL)
+import mysql.connector
+conn = mysql.connector.connect(
+    host="mysql-host",
+    user="user",
+    password="password",
+    database="mydb"
+)
+
+# After (CockroachDB)
+import psycopg2
+conn = psycopg2.connect(
+    host="cockroach-host",
+    port=26257,
+    user="user",
+    password="password",
+    database="mydb",
+    sslmode="require"
+)
+```
+
+```java Java
+// Before (MySQL)
+Class.forName("com.mysql.cj.jdbc.Driver");
+Connection conn = DriverManager.getConnection(
+    "jdbc:mysql://mysql-host:3306/mydb", "user", "password");
+
+// After (CockroachDB)
+Class.forName("org.postgresql.Driver");
+Connection conn = DriverManager.getConnection(
+    "jdbc:postgresql://cockroach-host:26257/mydb?sslmode=require",
+    "user", "password");
+```
+</CodeGroup>
+
+### SQL syntax differences
+
+<Warning>
+Update your SQL queries for CockroachDB compatibility:
+
+- **LIMIT with OFFSET**: Use PostgreSQL syntax
+  - MySQL: `LIMIT 10 OFFSET 20`
+  - CockroachDB: `LIMIT 10 OFFSET 20` (same, but ensure parameterization)
+
+- **String concatenation**: Use `||` operator
+  - MySQL: `CONCAT(first_name, ' ', last_name)`
+  - CockroachDB: `first_name || ' ' || last_name` (or use `CONCAT`)
+
+- **Date functions**:
+  - MySQL: `NOW()`, `CURDATE()`, `DATE_ADD()`
+  - CockroachDB: `now()`, `current_date()`, `date + INTERVAL`
+
+- **Case sensitivity**: CockroachDB identifiers are case-insensitive by default (like MySQL) but can be quoted for case-sensitivity
+</Warning>
+
+## Troubleshooting
+
+### Connection issues
+
+<AccordionGroup>
+  <Accordion title="MySQL connection errors">
+    Ensure your MySQL connection string uses the correct format:
+
+    ```bash
+    mysql://user:password@tcp(host:3306)/database
+    ```
+
+    For SSL connections:
+    ```bash
+    mysql://user:password@tcp(host:3306)/database?tls=true
+    ```
+  </Accordion>
+
+  <Accordion title="GTID not enabled">
+    If GTID is not enabled, you'll see an error during replication setup:
+
+    ```sql
+    -- Check GTID status
+    SHOW VARIABLES LIKE 'gtid_mode';
+    
+    -- If OFF, enable it (requires restart)
+    SET GLOBAL gtid_mode = ON;
+    SET GLOBAL enforce_gtid_consistency = ON;
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Performance issues
+
+- **Increase concurrency**: Use `--table-concurrency` and `--export-concurrency` flags
+- **Adjust batch sizes**: Use `--row-batch-size` to tune shard size
+- **Monitor binlog retention**: Ensure binlog retention is sufficient for migration duration
+
+### Data type incompatibilities
+
+<AccordionGroup>
+  <Accordion title="Integer size differences">
+    MySQL `INT` is 32-bit, but CockroachDB `INT` defaults to 64-bit:
+
+    ```sql
+    -- Use INT4 for 32-bit integers
+    CREATE TABLE example (
+        id INT4 PRIMARY KEY,
+        count INT8  -- explicitly 64-bit
+    );
+    ```
+  </Accordion>
+
+  <Accordion title="ENUM type conversion">
+    MySQL ENUM types must be converted:
+
+    ```sql
+    -- MySQL
+    CREATE TABLE users (
+        status ENUM('active', 'inactive', 'pending')
+    );
+    
+    -- CockroachDB option 1: Use CHECK constraint
+    CREATE TABLE users (
+        status STRING CHECK (status IN ('active', 'inactive', 'pending'))
+    );
+    
+    -- CockroachDB option 2: Create ENUM type
+    CREATE TYPE user_status AS ENUM ('active', 'inactive', 'pending');
+    CREATE TABLE users (
+        status user_status
+    );
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Schema Design" icon="diagram-project" href="/migration/schema-design">
+    Optimize your schema for CockroachDB
+  </Card>
+  <Card title="Migration Strategy" icon="map" href="/migration/migration-strategy">
+    Plan your migration approach
+  </Card>
+</CardGroup>

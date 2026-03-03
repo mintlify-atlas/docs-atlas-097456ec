@@ -1,0 +1,205 @@
+---
+title: Distributed Transactions
+description: Learn how CockroachDB handles distributed transactions with ACID guarantees across your cluster
+---
+
+CockroachDB provides distributed ACID transactions that span your entire cluster. Every transaction guarantees consistency, isolation, and durability across arbitrary tables and rows, even when data is distributed across multiple nodes and regions.
+
+## How Transactions Work
+
+CockroachDB treats all SQL statements as transactions—even single statements run in what's called "autocommit mode." This ensures consistency is maintained at all times. When you execute multiple statements together, CockroachDB bundles them into a single all-or-nothing transaction.
+
+<Steps>
+  <Step title="Transaction Begins">
+    When you start a transaction, CockroachDB assigns it a timestamp using hybrid-logical clocks (HLC). This timestamp tracks both physical time and logical ordering, ensuring transactions maintain a consistent view of your data.
+  </Step>
+  
+  <Step title="Writes Create Intents">
+    Write operations don't immediately modify data. Instead, they create **write intents**—provisional values that act as both locks and uncommitted data. These intents point to a transaction record that tracks the transaction's state (`PENDING`, `STAGING`, `COMMITTED`, or `ABORTED`).
+  </Step>
+  
+  <Step title="Reads Check for Conflicts">
+    When reading data, CockroachDB checks for write intents from other transactions. If it encounters an intent, it resolves the conflict by checking the intent's transaction state and either waiting, pushing timestamps forward, or aborting one transaction.
+  </Step>
+  
+  <Step title="Commit Completes">
+    At commit time, CockroachDB uses the Parallel Commits protocol. It marks the transaction as `STAGING`, verifies all writes succeeded, then returns success to you. The transaction record is updated to `COMMITTED` and intents are resolved asynchronously.
+  </Step>
+</Steps>
+
+## Transaction Lifecycle
+
+Here's what happens when your transaction moves through CockroachDB:
+
+### Gateway Node Processing
+
+Your SQL statement arrives at a **gateway node**, which:
+- Parses and validates your SQL
+- Creates a logical execution plan
+- Converts SQL operations into key-value operations
+- Manages transaction coordination
+
+<Info>
+Any node can act as a gateway. CockroachDB's symmetrical architecture means you can connect to any node and access any data while maintaining strong consistency.
+</Info>
+
+### Distribution to Leaseholders
+
+The gateway's `DistSender` component routes operations to the appropriate **leaseholder** nodes. Each range has one leaseholder that:
+- Serves all reads for that range
+- Coordinates all writes to that range  
+- Acts as the Raft group leader for consensus
+
+### Consensus via Raft
+
+Write operations go through the Raft consensus protocol:
+
+1. The leaseholder proposes the write to its Raft group
+2. A majority of replicas must acknowledge the write
+3. Once consensus is reached, the write is committed to the Raft log
+4. The write is applied to the storage engine
+
+<Note>
+CockroachDB uses **Leader leases** to ensure the Raft leader and leaseholder are always co-located, reducing network round trips and improving performance.
+</Note>
+
+## Isolation Levels
+
+CockroachDB supports two isolation levels:
+
+<Accordion title="SERIALIZABLE (Default)">
+The strongest isolation level that prevents all concurrency anomalies:
+
+- **Guarantees**: Complete isolation from concurrent transactions
+- **Read behavior**: Transactions maintain a single read snapshot
+- **Write behavior**: Uses read refreshing to handle timestamp conflicts
+- **Retry handling**: May require client-side retry logic for conflicts
+
+Use `SERIALIZABLE` when you need the strongest consistency guarantees and can handle occasional transaction retries.
+</Accordion>
+
+<Accordion title="READ COMMITTED">
+A weaker isolation level that avoids serialization errors:
+
+- **Guarantees**: Prevents dirty reads and dirty writes
+- **Read behavior**: Each statement gets a fresh read snapshot
+- **Write behavior**: Allows read/write timestamp skew at commit time
+- **Retry handling**: Automatic statement-level retries (no client-side logic needed)
+
+Use `READ COMMITTED` when you need higher concurrency and can tolerate non-repeatable reads.
+</Accordion>
+
+## Concurrency Control
+
+CockroachDB manages concurrent access through several mechanisms:
+
+### Timestamp Cache
+
+The timestamp cache tracks the highest timestamp for reads served by each leaseholder. When a write arrives, CockroachDB checks it against the timestamp cache:
+
+- If the write's timestamp is too old, it's pushed forward to preserve serializability
+- This ensures writes can never rewrite history
+- Under `SERIALIZABLE` isolation, pushed timestamps may trigger read refreshing or transaction retries
+
+### Lock Management
+
+The concurrency manager uses latches and locks to sequence operations:
+
+- **Latches**: Short-lived locks held during request evaluation
+- **Write intents**: Replicated exclusive locks stored with the data  
+- **Unreplicated locks**: Fast in-memory locks for `SERIALIZABLE` transactions (unless durable locking is enabled)
+
+<Warning>
+Unreplicated locks don't survive lease transfers by default. Enable `enable_durable_locking_for_serializable` if you need locks to persist across leaseholder changes.
+</Warning>
+
+### Transaction Conflicts
+
+When transactions conflict, CockroachDB resolves them through:
+
+1. **Priority-based resolution**: Explicit `HIGH` or `LOW` priority transactions win/lose automatically
+2. **Expiration checking**: Expired transactions are aborted
+3. **Wait queue**: Active transactions wait in the `TxnWaitQueue` for blocking transactions to complete
+4. **Deadlock detection**: Random abort if circular dependencies are detected
+
+## Performance Optimizations
+
+### Transaction Pipelining
+
+Write intents are replicated in parallel rather than sequentially. The gateway doesn't wait for each write to fully replicate before sending the next—it only waits at commit time.
+
+**Impact**: Dramatically reduces latency for multi-statement transactions by making consensus work approach O(1) instead of O(n).
+
+### Parallel Commits
+
+CockroachDB commits transactions in one round of consensus instead of two:
+
+1. Mark transaction as `STAGING` with list of pending writes
+2. Wait for all writes to succeed
+3. Return success to client (transaction is now implicitly committed)
+4. Asynchronously update transaction record to `COMMITTED`
+
+**Impact**: Cuts commit latency in half for most OLTP workloads.
+
+### Read Refreshing
+
+When a `SERIALIZABLE` transaction's timestamp is pushed, CockroachDB attempts to refresh all previously read values at the new timestamp:
+
+- If no values changed: Transaction commits at the pushed timestamp
+- If values changed: Transaction must retry
+
+**Impact**: Reduces transaction retries by allowing commits despite timestamp conflicts.
+
+## Automatic Retries
+
+CockroachDB automatically retries certain transactions:
+
+<Accordion title="Individual Statements">
+Single statements (implicit transactions) are automatically retried as long as results stay under 16KiB (configurable via `sql.defaults.results_buffer.size`).
+
+**Example**: `DELETE FROM users WHERE id = 123` retries automatically.
+</Accordion>
+
+<Accordion title="Batched Statements">
+Multiple statements sent as a single batch retry automatically if:
+
+- They're sent without returning intermediate results
+- Combined results stay under the buffer size
+- The client uses PostgreSQL Extended Query protocol with `Sync` messages, or Simple Query protocol with semicolon-separated statements
+
+**Example**:
+```sql
+BEGIN;
+DELETE FROM orders WHERE customer = 1;
+DELETE FROM customers WHERE id = 1;
+COMMIT;
+```
+</Accordion>
+
+<Note>
+Increase automatic retry opportunities by raising `sql.defaults.results_buffer.size`. However, larger buffers use more memory.
+</Note>
+
+## Best Practices
+
+<Tip>
+**Keep transactions short**: Long-running transactions hold locks longer and increase conflict probability. Break large operations into smaller batches when possible.
+</Tip>
+
+<Tip>
+**Use default priority**: Let CockroachDB manage transaction priorities automatically. Only use explicit `HIGH`/`LOW` priority when you have a specific need.
+</Tip>
+
+<Tip>
+**Implement retry logic**: For `SERIALIZABLE` transactions, implement exponential backoff retry logic in your application to handle transaction conflicts gracefully.
+</Tip>
+
+<Tip>
+**Consider READ COMMITTED**: If your application experiences frequent serialization errors, evaluate whether `READ COMMITTED` isolation meets your consistency requirements while providing better concurrency.
+</Tip>
+
+## See Also
+
+- [Data Replication](/concepts/data-replication) - How CockroachDB replicates data across nodes
+- [Multi-Region Deployments](/concepts/multi-region) - Configuring transactions for geo-distributed clusters
+- [Resilience and Recovery](/concepts/resilience-recovery) - How transactions survive failures

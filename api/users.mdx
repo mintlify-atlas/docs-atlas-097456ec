@@ -1,0 +1,410 @@
+---
+title: User Management API
+description: Create and manage SQL users in CockroachDB Cloud clusters
+---
+
+The User Management API enables you to create, list, and manage SQL users within your CockroachDB Cloud clusters.
+
+## List SQL Users
+
+Retrieve all SQL users in a cluster.
+
+```bash GET /v1/clusters/{cluster_id}/sql-users
+curl --request GET \
+  --url https://cockroachlabs.cloud/api/v1/clusters/{cluster_id}/sql-users \
+  --header "Authorization: Bearer {secret_key}"
+```
+
+### Path Parameters
+
+<ParamField path="cluster_id" type="string" required>
+  Unique identifier for the cluster
+  
+  <Note>
+  The cluster ID used in the Cloud API is different from the routing ID used when connecting to clusters.
+  </Note>
+</ParamField>
+
+### Response
+
+```json Response Example
+{
+  "users": [
+    {
+      "name": "admin"
+    },
+    {
+      "name": "app_user"
+    },
+    {
+      "name": "readonly_user"
+    }
+  ],
+  "pagination": {
+    "next_page": null
+  }
+}
+```
+
+<ResponseField name="users" type="array">
+  Array of SQL user objects
+  
+  <Expandable title="User Object">
+    <ResponseField name="name" type="string">
+      SQL username
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="pagination" type="object">
+  Pagination information
+  
+  <Expandable title="Pagination Object">
+    <ResponseField name="next_page" type="string">
+      Token for retrieving the next page of results (null if no more pages)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Create a SQL User
+
+Create a new SQL user in a cluster.
+
+```bash POST /v1/clusters/{cluster_id}/sql-users
+curl --request POST \
+  --url https://cockroachlabs.cloud/api/v1/clusters/{cluster_id}/sql-users \
+  --header "Authorization: Bearer {secret_key}" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "name": "new_user",
+    "password": "SecurePassword123!"
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="cluster_id" type="string" required>
+  Unique identifier for the cluster
+</ParamField>
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  SQL username for the new user
+  
+  **Constraints:**
+  - Cannot be empty
+  - Cannot contain spaces
+  - Should follow SQL identifier rules
+  - Cannot be a reserved keyword
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Password for the new user
+  
+  **Requirements:**
+  - Minimum 12 characters recommended
+  - Should include uppercase, lowercase, numbers, and special characters
+  - Store securely - cannot be retrieved later
+</ParamField>
+
+### Response
+
+```json Response Example
+{
+  "name": "new_user"
+}
+```
+
+<Warning>
+By default, SQL users created via the API are granted the SQL `admin` role, which has full privileges for all databases and tables in the cluster.
+
+For production environments, follow the principle of least privilege: create users with minimal permissions and grant only the specific privileges they need.
+</Warning>
+
+<Note>
+Store the password securely after creation. Passwords cannot be retrieved later - they can only be reset.
+</Note>
+
+## Delete a SQL User
+
+Permanently delete a SQL user from a cluster.
+
+```bash DELETE /v1/clusters/{cluster_id}/sql-users/{sql_username}
+curl --request DELETE \
+  --url https://cockroachlabs.cloud/api/v1/clusters/{cluster_id}/sql-users/{sql_username} \
+  --header "Authorization: Bearer {secret_key}"
+```
+
+### Path Parameters
+
+<ParamField path="cluster_id" type="string" required>
+  Unique identifier for the cluster
+</ParamField>
+
+<ParamField path="sql_username" type="string" required>
+  Username of the SQL user to delete
+</ParamField>
+
+### Response
+
+```json Response Example
+{
+  "name": "deleted_user"
+}
+```
+
+<Warning>
+Deleting a SQL user is permanent and cannot be undone. Active sessions for the deleted user will be terminated.
+</Warning>
+
+## Change User Password
+
+Update a SQL user's password.
+
+```bash PUT /v1/clusters/{cluster_id}/sql-users/{sql_username}/password
+curl --request PUT \
+  --url https://cockroachlabs.cloud/api/v1/clusters/{cluster_id}/sql-users/{sql_username}/password \
+  --header "Authorization: Bearer {secret_key}" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "password": "NewSecurePassword456!"
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="cluster_id" type="string" required>
+  Unique identifier for the cluster
+</ParamField>
+
+<ParamField path="sql_username" type="string" required>
+  Username of the SQL user
+</ParamField>
+
+### Request Body
+
+<ParamField body="password" type="string" required>
+  New password for the user
+  
+  **Requirements:**
+  - Must be different from the current password
+  - Minimum 12 characters recommended
+  - Should include uppercase, lowercase, numbers, and special characters
+</ParamField>
+
+### Response
+
+```json Response Example
+{
+  "name": "user_with_new_password"
+}
+```
+
+<Note>
+Changing a password does not terminate existing sessions. Users will need to reconnect with the new password for new sessions.
+</Note>
+
+## Managing User Privileges
+
+While you create users through the Cloud API, you manage their privileges using SQL statements via a SQL client connection.
+
+### Grant Specific Database Access
+
+To limit a user to a specific database:
+
+```sql
+GRANT ALL ON DATABASE mydb TO app_user;
+```
+
+### Grant Table-Level Permissions
+
+For more granular control:
+
+```sql
+GRANT SELECT, INSERT, UPDATE ON TABLE mytable TO app_user;
+```
+
+### Create a Read-Only User
+
+```sql
+GRANT SELECT ON DATABASE mydb TO readonly_user;
+```
+
+### Revoke Admin Privileges
+
+If a user was created with admin privileges:
+
+```sql
+GRANT admin TO newuser;  -- User has admin by default from API
+REVOKE admin FROM newuser;  -- Remove admin privilege
+GRANT SELECT ON DATABASE mydb TO newuser;  -- Grant specific access
+```
+
+## Required Permissions
+
+| Operation | Required Role |
+|-----------|---------------|
+| List SQL users | Cluster Developer, Cluster Admin |
+| Create SQL user | Cluster Creator, Cluster Admin |
+| Delete SQL user | Cluster Creator, Cluster Admin |
+| Change password | Cluster Creator, Cluster Admin |
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Strong Passwords">
+    Always use strong, unique passwords for SQL users:
+    
+    - Minimum 12-16 characters
+    - Mix of uppercase, lowercase, numbers, and special characters
+    - Avoid dictionary words and common patterns
+    - Use a password manager to generate and store passwords
+  </Accordion>
+  
+  <Accordion title="Follow Least Privilege Principle">
+    After creating users via the API:
+    
+    1. Connect to the cluster with an admin account
+    2. Revoke the default admin role if not needed
+    3. Grant only the minimum required privileges
+    4. Use role-based access control for groups of users
+    
+    ```sql
+    REVOKE admin FROM app_user;
+    GRANT SELECT, INSERT, UPDATE ON DATABASE app_db TO app_user;
+    ```
+  </Accordion>
+  
+  <Accordion title="Rotate Passwords Regularly">
+    Implement a password rotation policy:
+    
+    - Change passwords every 90 days
+    - Immediately rotate passwords if they may have been compromised
+    - Use the password change API endpoint programmatically
+    - Coordinate password changes with application deployments
+  </Accordion>
+  
+  <Accordion title="Use Service Accounts for Applications">
+    For application access:
+    
+    - Create dedicated SQL users for each application or service
+    - Never share credentials between applications
+    - Use descriptive names (e.g., `payment_service`, `analytics_worker`)
+    - Document which application uses which user
+  </Accordion>
+  
+  <Accordion title="Audit User Access Regularly">
+    Periodically review SQL users:
+    
+    ```bash
+    # List all users
+    curl -X GET https://cockroachlabs.cloud/api/v1/clusters/{id}/sql-users \
+      -H "Authorization: Bearer {key}"
+    
+    # Check privileges via SQL
+    SHOW GRANTS FOR user_name;
+    ```
+    
+    Remove users that are no longer needed.
+  </Accordion>
+</AccordionGroup>
+
+## Common Workflows
+
+### Create Application User with Limited Access
+
+<Steps>
+  <Step title="Create the user via API">
+    ```bash
+    curl --request POST \
+      --url https://cockroachlabs.cloud/api/v1/clusters/{cluster_id}/sql-users \
+      --header "Authorization: Bearer {secret_key}" \
+      --header "Content-Type: application/json" \
+      --data '{"name": "app_user", "password": "SecurePassword123!"}'
+    ```
+  </Step>
+  
+  <Step title="Connect with admin user">
+    Connect to the cluster using a SQL client with an admin account.
+  </Step>
+  
+  <Step title="Revoke admin and grant specific access">
+    ```sql
+    REVOKE admin FROM app_user;
+    GRANT SELECT, INSERT, UPDATE ON DATABASE production TO app_user;
+    GRANT SELECT, INSERT, UPDATE ON TABLE production.orders TO app_user;
+    GRANT SELECT, INSERT, UPDATE ON TABLE production.customers TO app_user;
+    ```
+  </Step>
+  
+  <Step title="Verify permissions">
+    ```sql
+    SHOW GRANTS FOR app_user;
+    ```
+  </Step>
+</Steps>
+
+### Rotate All Application Passwords
+
+```bash Example Script
+#!/bin/bash
+
+CLUSTER_ID="your-cluster-id"
+API_KEY="your-api-key"
+
+USERS=("app_user" "analytics_user" "backup_user")
+
+for USER in "${USERS[@]}"; do
+  NEW_PASSWORD=$(openssl rand -base64 32)
+  
+  curl --request PUT \
+    --url "https://cockroachlabs.cloud/api/v1/clusters/$CLUSTER_ID/sql-users/$USER/password" \
+    --header "Authorization: Bearer $API_KEY" \
+    --header "Content-Type: application/json" \
+    --data "{\"password\": \"$NEW_PASSWORD\"}"
+  
+  echo "$USER: $NEW_PASSWORD" >> passwords.txt
+  
+  # Update application secrets/config
+  # kubectl create secret generic db-password --from-literal=password=$NEW_PASSWORD
+done
+```
+
+## Error Responses
+
+### 400 Bad Request
+
+Occurs when the request is malformed:
+
+```json
+{
+  "code": 3,
+  "message": "invalid request",
+  "details": ["password must be at least 1 character"]
+}
+```
+
+### 409 Conflict
+
+Occurs when trying to create a user that already exists:
+
+```json
+{
+  "code": 6,
+  "message": "user already exists",
+  "details": ["username 'app_user' is already taken"]
+}
+```
+
+### 404 Not Found
+
+Occurs when trying to modify or delete a non-existent user:
+
+```json
+{
+  "code": 5,
+  "message": "user not found",
+  "details": ["username 'nonexistent_user' does not exist"]
+}
+```
