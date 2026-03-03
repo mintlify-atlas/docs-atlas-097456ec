@@ -1,0 +1,220 @@
+{
+  "projectType": "data-platform",
+  "projectName": "CockroachDB",
+  "projectDescription": "A distributed SQL database for building global, scalable cloud services that survive disasters.",
+  "theme": "aspen",
+  "primaryColor": "#6933FF",
+  "lightColor": "#8A5AFF",
+  "darkColor": "#5929CC",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "install-cockroachdb",
+              "start-local-cluster"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/sql-layer",
+              "architecture/transaction-layer",
+              "architecture/distribution-layer",
+              "architecture/replication-layer",
+              "architecture/storage-layer"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/distributed-transactions",
+              "concepts/data-replication",
+              "concepts/multi-region",
+              "concepts/resilience-recovery"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/cockroachdb-cloud",
+              "deployment/self-hosted",
+              "deployment/kubernetes",
+              "deployment/production-checklist"
+            ]
+          },
+          {
+            "group": "SQL Reference",
+            "pages": [
+              "sql/overview",
+              "sql/data-types",
+              "sql/statements",
+              "sql/functions",
+              "sql/transactions"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/backup-restore",
+              "operations/monitoring",
+              "operations/performance-tuning",
+              "operations/security",
+              "operations/troubleshooting"
+            ]
+          },
+          {
+            "group": "Migration",
+            "pages": [
+              "migration/migration-overview",
+              "migration/postgres-migration",
+              "migration/mysql-migration",
+              "migration/schema-design"
+            ]
+          },
+          {
+            "group": "Developer Guide",
+            "pages": [
+              "developer/build-app-overview",
+              "developer/client-drivers",
+              "developer/orms",
+              "developer/best-practices"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "SQL Statements",
+        "groups": [
+          {
+            "group": "Data Definition",
+            "pages": [
+              "sql-statements/create-database",
+              "sql-statements/create-table",
+              "sql-statements/create-index",
+              "sql-statements/alter-table",
+              "sql-statements/drop-table"
+            ]
+          },
+          {
+            "group": "Data Manipulation",
+            "pages": [
+              "sql-statements/select",
+              "sql-statements/insert",
+              "sql-statements/update",
+              "sql-statements/delete",
+              "sql-statements/upsert"
+            ]
+          },
+          {
+            "group": "Transaction Control",
+            "pages": [
+              "sql-statements/begin-transaction",
+              "sql-statements/commit-transaction",
+              "sql-statements/rollback-transaction",
+              "sql-statements/savepoint"
+            ]
+          },
+          {
+            "group": "Access Control",
+            "pages": [
+              "sql-statements/create-role",
+              "sql-statements/grant",
+              "sql-statements/revoke",
+              "sql-statements/show-grants"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CockroachDB Cloud",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "cloud/overview",
+              "cloud/quickstart",
+              "cloud/create-cluster",
+              "cloud/connect-to-cluster"
+            ]
+          },
+          {
+            "group": "Cluster Management",
+            "pages": [
+              "cloud/cluster-management",
+              "cloud/scaling",
+              "cloud/backup-restore",
+              "cloud/monitoring"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "cloud/authentication",
+              "cloud/authorization",
+              "cloud/network-security",
+              "cloud/compliance"
+            ]
+          },
+          {
+            "group": "Billing & Plans",
+            "pages": [
+              "cloud/pricing",
+              "cloud/billing-management",
+              "cloud/plan-comparison"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Cloud API",
+            "pages": [
+              "api/cloud-api-overview",
+              "api/authentication",
+              "api/clusters",
+              "api/databases",
+              "api/users"
+            ]
+          },
+          {
+            "group": "Cluster API",
+            "pages": [
+              "api/cluster-api-overview",
+              "api/cluster-endpoints",
+              "api/health-endpoints"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Distributed SQL with ACID transactions",
+    "Horizontal scalability and resilience",
+    "Multi-region and geo-partitioned data",
+    "Automatic replication and failover",
+    "PostgreSQL wire protocol compatibility",
+    "Cloud-native deployment options",
+    "Built-in backup and restore",
+    "Real-time changefeed streaming"
+  ],
+  "publicApiSurface": [
+    "SQL: CREATE DATABASE, CREATE TABLE, CREATE INDEX",
+    "SQL: SELECT, INSERT, UPDATE, DELETE, UPSERT",
+    "SQL: BEGIN, COMMIT, ROLLBACK",
+    "SQL: BACKUP, RESTORE, CREATE CHANGEFEED",
+    "CLI: cockroach start, cockroach init, cockroach sql",
+    "Cloud API: /v1/clusters (GET, POST, PATCH, DELETE)",
+    "Cloud API: /v1/databases (GET, POST, DELETE)",
+    "Cluster API: /_status/health, /_status/nodes"
+  ]
+}
