@@ -48,13 +48,13 @@ Service accounts can be assigned the following roles:
 
 Include your secret key in the `Authorization` header using the Bearer authentication scheme:
 
-```bash curl
+```bash
 curl --request GET \
   --url https://cockroachlabs.cloud/api/v1/clusters \
   --header "Authorization: Bearer {secret_key}"
 ```
 
-```bash With API Version
+```bash
 curl --request GET \
   --url https://cockroachlabs.cloud/api/v1/clusters \
   --header "Authorization: Bearer {secret_key}" \
@@ -92,7 +92,7 @@ Occurs when:
 - The secret key has been revoked
 - The service account has been deleted
 
-```json Response Example
+```json
 {
   "code": 16,
   "message": "unauthenticated",
@@ -106,7 +106,7 @@ Occurs when:
 - The service account lacks required permissions
 - The requested resource is not accessible
 
-```json Response Example
+```json
 {
   "code": 7,
   "message": "permission denied",
@@ -118,7 +118,7 @@ Occurs when:
 
 Occurs when you exceed 10 requests per second:
 
-```json Response Example
+```json
 {
   "code": 8,
   "message": "rate limit exceeded",
@@ -164,7 +164,7 @@ curl --request GET \
   --header 'Accept: application/json'
 ```
 
-```json Success Response
+```json
 {
   "clusters": [
     {
@@ -183,7 +183,7 @@ curl --request GET \
 
 To verify your API key is working correctly, make a simple GET request:
 
-```bash Test Authentication
+```bash
 curl --request GET \
   --url https://cockroachlabs.cloud/api/v1/clusters \
   --header "Authorization: Bearer {secret_key}" \
